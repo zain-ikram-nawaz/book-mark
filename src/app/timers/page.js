@@ -16,8 +16,20 @@ export default function ListTimers() {
   // Search and filter states
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedAssignee, setSelectedAssignee] = useState("");
+  const [selectedDateFilter, setSelectedDateFilter] = useState("");
   const [assigneeList, setAssigneeList] = useState([]);
   const [isAssigneeDropdownOpen, setIsAssigneeDropdownOpen] = useState(false);
+  const [isDateDropdownOpen, setIsDateDropdownOpen] = useState(false);
+
+  // Date filter options
+  const dateFilterOptions = [
+    { value: "", label: "All Dates" },
+    { value: "today", label: "Today" },
+    { value: "yesterday", label: "Yesterday" },
+    { value: "last3days", label: "Last 3 Days" },
+    { value: "thisWeek", label: "This Week" },
+    { value: "lastWeek", label: "Last Week" }
+  ];
 
   // Fetch spaces
   useEffect(() => {
@@ -101,10 +113,11 @@ export default function ListTimers() {
     setAssigneeList(Array.from(allAssignees).sort());
   }, [timers]);
 
-  // Filter timers based on search term and selected assignee
+  // Filter timers based on search term, selected assignee, and date filter
   useEffect(() => {
     let filtered = timers;
 
+    // Search filter
     if (searchTerm) {
       filtered = filtered.filter(timer =>
         timer.taskName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -112,14 +125,58 @@ export default function ListTimers() {
       );
     }
 
+    // Assignee filter
     if (selectedAssignee) {
       filtered = filtered.filter(timer =>
         timer.assignees?.includes(selectedAssignee)
       );
     }
 
+    // Date filter
+    if (selectedDateFilter) {
+      const now = new Date();
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+      filtered = filtered.filter(timer => {
+        if (!timer.start_date) return false;
+
+        const timerDate = new Date(Number(timer.start_date));
+        const timerDay = new Date(timerDate.getFullYear(), timerDate.getMonth(), timerDate.getDate());
+
+        switch (selectedDateFilter) {
+          case "today":
+            return timerDay.getTime() === today.getTime();
+
+          case "yesterday":
+            const yesterday = new Date(today);
+            yesterday.setDate(yesterday.getDate() - 1);
+            return timerDay.getTime() === yesterday.getTime();
+
+          case "last3days":
+            const threeDaysAgo = new Date(today);
+            threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
+            return timerDay >= threeDaysAgo && timerDay <= today;
+
+          case "thisWeek":
+            const startOfWeek = new Date(today);
+            startOfWeek.setDate(today.getDate() - today.getDay());
+            return timerDay >= startOfWeek && timerDay <= today;
+
+          case "lastWeek":
+            const startOfLastWeek = new Date(today);
+            startOfLastWeek.setDate(today.getDate() - today.getDay() - 7);
+            const endOfLastWeek = new Date(startOfLastWeek);
+            endOfLastWeek.setDate(startOfLastWeek.getDate() + 6);
+            return timerDay >= startOfLastWeek && timerDay <= endOfLastWeek;
+
+          default:
+            return true;
+        }
+      });
+    }
+
     setFilteredTimers(filtered);
-  }, [searchTerm, selectedAssignee, timers]);
+  }, [searchTerm, selectedAssignee, selectedDateFilter, timers]);
 
   // Convert seconds to H:M:S
   function formatTime(seconds) {
@@ -132,6 +189,12 @@ export default function ListTimers() {
   const clearFilters = () => {
     setSearchTerm("");
     setSelectedAssignee("");
+    setSelectedDateFilter("");
+  };
+
+  const getDateFilterLabel = (value) => {
+    const option = dateFilterOptions.find(opt => opt.value === value);
+    return option ? option.label : "All Dates";
   };
 
   return (
@@ -197,8 +260,9 @@ export default function ListTimers() {
 
       {/* Search and Filter Section */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-8">
-        <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-end justify-between">
-          <div className="flex-1 w-full">
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 items-end">
+          {/* Search Input */}
+          <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Search Timers</label>
             <div className="relative">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -216,7 +280,8 @@ export default function ListTimers() {
             </div>
           </div>
 
-          <div className="w-full sm:w-64">
+          {/* Assignee Filter */}
+          <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Filter by Assignee</label>
             <div className="relative">
               <button
@@ -232,7 +297,7 @@ export default function ListTimers() {
               </button>
 
               {isAssigneeDropdownOpen && (
-                <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-auto">
+                <div className="absolute z-20 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-auto">
                   <button
                     className="w-full text-left px-4 py-2 hover:bg-gray-50 text-gray-700 border-b border-gray-100"
                     onClick={() => {
@@ -259,16 +324,54 @@ export default function ListTimers() {
             </div>
           </div>
 
-          <button
-            onClick={clearFilters}
-            className="px-6 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-gray-500 transition-all font-medium"
-          >
-            Clear Filters
-          </button>
+          {/* Date Filter */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Filter by Date</label>
+            <div className="relative">
+              <button
+                className="w-full flex items-center justify-between px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all bg-white"
+                onClick={() => setIsDateDropdownOpen(!isDateDropdownOpen)}
+              >
+                <span className={selectedDateFilter ? "text-gray-900" : "text-gray-500"}>
+                  {getDateFilterLabel(selectedDateFilter)}
+                </span>
+                <svg className="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+
+              {isDateDropdownOpen && (
+                <div className="absolute z-20 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-auto">
+                  {dateFilterOptions.map(option => (
+                    <button
+                      key={option.value}
+                      className="w-full text-left px-4 py-2 hover:bg-gray-50 text-gray-700 border-b border-gray-100 last:border-b-0"
+                      onClick={() => {
+                        setSelectedDateFilter(option.value);
+                        setIsDateDropdownOpen(false);
+                      }}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Clear Filters Button */}
+          <div>
+            <button
+              onClick={clearFilters}
+              className="w-full px-6 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-gray-500 transition-all font-medium"
+            >
+              Clear Filters
+            </button>
+          </div>
         </div>
 
         {/* Filter Summary */}
-        {(searchTerm || selectedAssignee) && (
+        {(searchTerm || selectedAssignee || selectedDateFilter) && (
           <div className="mt-4 flex flex-wrap gap-2">
             {searchTerm && (
               <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
@@ -287,6 +390,17 @@ export default function ListTimers() {
                 <button
                   onClick={() => setSelectedAssignee("")}
                   className="ml-1 hover:text-green-600 focus:outline-none"
+                >
+                  ×
+                </button>
+              </span>
+            )}
+            {selectedDateFilter && (
+              <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                Date: {getDateFilterLabel(selectedDateFilter)}
+                <button
+                  onClick={() => setSelectedDateFilter("")}
+                  className="ml-1 hover:text-purple-600 focus:outline-none"
                 >
                   ×
                 </button>
