@@ -454,7 +454,8 @@ export default function ListTimers() {
             {filteredTimers.map(timer => (
               <div key={timer.taskId + timer.startTime} className="border border-gray-200 rounded-xl p-6 hover:shadow-md transition-all duration-200 bg-white group">
                 <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4">
-                  <div className="flex-1">
+                  <div className={timer.source === "clickup" ? "bg-red-500" : "flex-1"}
+>
                     <div className="flex flex-col sm:flex-row sm:items-start justify-between mb-3">
                       <h3 className="font-semibold text-gray-900 text-lg mb-2 sm:mb-0 group-hover:text-blue-600 transition-colors">
                         <a
@@ -492,6 +493,7 @@ export default function ListTimers() {
                         <span>By: {timer.user}</span>
                       </div>
 
+
                       {timer.assignees && timer.assignees.length > 0 && (
                         <div className="flex items-center gap-2">
                           <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -501,7 +503,24 @@ export default function ListTimers() {
                         </div>
                       )}
                     </div>
+<div className="flex flex-wrap gap-6 text-sm text-gray-600">
+                      <div className="flex items-center gap-2">
+                        <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                        </svg>
+                        <span>source :{timer.source}</span>
+                      </div>
 
+
+                      {timer.assignees && timer.assignees.length > 0 && (
+                        <div className="flex items-center gap-2">
+                          <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                          </svg>
+                          <span>Assigned to: {timer.assignees.join(", ")}</span>
+                        </div>
+                      )}
+                    </div>
                     {(timer.start_date || timer.due_date) && (
                       <div className="flex flex-wrap gap-4 mt-4 text-xs text-gray-500">
                         {timer.start_date && (
