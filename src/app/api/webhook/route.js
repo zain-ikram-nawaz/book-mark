@@ -6,7 +6,7 @@ export default async function handler(req, res) {
   const CLICKUP_SECRET = process.env.CLICKUP_SECRET;
   const signature = req.headers['x-clickup-signature'];
 
-  // Secret validation
+
   if (!signature || signature !== CLICKUP_SECRET) {
     console.log("Invalid signature:", signature);
     return res.status(403).json({ error: "Invalid signature" });
