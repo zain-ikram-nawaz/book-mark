@@ -1,553 +1,388 @@
-"use client";
-import Link from "next/link";
-import React, { useEffect, useState } from "react";
+'use client';
 
-export default function ListTimers() {
-  const [spaces, setSpaces] = useState([]);
-  const [folders, setFolders] = useState([]);
-  const [lists, setLists] = useState([]);
-  const [timers, setTimers] = useState([]);
-  const [filteredTimers, setFilteredTimers] = useState([]);
-  const [loading, setLoading] = useState(false);
+import React, { useState, useEffect, useCallback } from 'react';
+import { RefreshCw, LogOut, Clock, Layers, Folder, List, User, TrendingUp } from 'lucide-react';
 
-  const [selectedSpace, setSelectedSpace] = useState("");
-  const [selectedFolder, setSelectedFolder] = useState("");
-  const [selectedList, setSelectedList] = useState("");
+// --- CONFIGURATION ---
+// Environment variables must be set with NEXT_PUBLIC_ prefix for client-side access
+const CLICKUP_CLIENT_ID = process.env.NEXT_PUBLIC_CLICKUP_CLIENT_ID;
+const REDIRECT_URI = process.env.NEXT_PUBLIC_CLICKUP_REDIRECT_URI;
+// Scopes needed for time tracking and task/space hierarchy
+const OAUTH_SCOPES = 'time_tracking:read task:read space:read';
+const ACCESS_TOKEN_KEY = 'clickup_access_token';
 
-  // Search and filter states
-  const [searchTerm, setSearchTerm] = useState("");
-  const [selectedAssignee, setSelectedAssignee] = useState("");
-  const [selectedDateFilter, setSelectedDateFilter] = useState("");
-  const [assigneeList, setAssigneeList] = useState([]);
-  const [isAssigneeDropdownOpen, setIsAssigneeDropdownOpen] = useState(false);
-  const [isDateDropdownOpen, setIsDateDropdownOpen] = useState(false);
+// Helper to format duration (ms to HH:MM:SS)
+const formatDuration = (ms) => {
+    const totalSeconds = Math.floor(ms / 1000);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
 
-  // Date filter options
-  const dateFilterOptions = [
-    { value: "", label: "All Dates" },
-    { value: "today", label: "Today" },
-    { value: "yesterday", label: "Yesterday" },
-    { value: "last3days", label: "Last 3 Days" },
-    { value: "thisWeek", label: "This Week" },
-    { value: "lastWeek", label: "Last Week" }
-  ];
+    const pad = (num) => String(num).padStart(2, '0');
+    return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
+};
 
-  // Fetch spaces
-  useEffect(() => {
-    async function fetchSpaces() {
-      const res = await fetch("/api/spaces");
-      const json = await res.json();
-      setSpaces(json.data || []);
-      if (json.data && json.data.length > 0) setSelectedSpace(json.data[0].id);
-    }
-    fetchSpaces();
-  }, []);
+// --- AUTHENTICATION PROVIDER ---
+function useAuth() {
+    const [accessToken, setAccessToken] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
 
-  // Fetch folders or lists when space changes
-  useEffect(() => {
-    if (!selectedSpace) return;
+    useEffect(() => {
+        const urlParams = new URLSearchParams(window.location.search);
+        const tokenFromUrl = urlParams.get('access_token');
+        const storedToken = localStorage.getItem(ACCESS_TOKEN_KEY);
 
-    async function fetchFoldersOrLists() {
-      const foldersRes = await fetch(`/api/folders?spaceId=${selectedSpace}`);
-      const foldersJson = await foldersRes.json();
-      setFolders(foldersJson.data || []);
-      setLists([]);
-      setTimers([]);
-      setFilteredTimers([]);
-      setSelectedFolder("");
-      setSelectedList("");
-
-      if (foldersJson.data && foldersJson.data.length > 0) {
-        setSelectedFolder(foldersJson.data[0].id);
-      } else {
-        const listsRes = await fetch(`/api/lists?spaceId=${selectedSpace}`);
-        const listsJson = await listsRes.json();
-        setLists(listsJson.data || []);
-        if (listsJson.data && listsJson.data.length > 0) setSelectedList(listsJson.data[0].id);
-      }
-    }
-
-    fetchFoldersOrLists();
-  }, [selectedSpace]);
-
-  // Fetch lists when folder changes
-  useEffect(() => {
-    if (!selectedFolder) return;
-
-    async function fetchLists() {
-      const res = await fetch(`/api/lists?folderId=${selectedFolder}`);
-      const json = await res.json();
-      setLists(json.data || []);
-      setTimers([]);
-      setFilteredTimers([]);
-      if (json.data && json.data.length > 0) setSelectedList(json.data[0].id);
-    }
-
-    fetchLists();
-  }, [selectedFolder]);
-
-  // Fetch timers when list changes
-  useEffect(() => {
-    if (!selectedList) return;
-
-    async function fetchTimers() {
-      setLoading(true);
-      const res = await fetch(`/api/tasks?listId=${selectedList}`);
-      const json = await res.json();
-      console.log(json, "timers");
-      setTimers(json.data || []);
-      setFilteredTimers(json.data || []);
-      setLoading(false);
-    }
-
-    fetchTimers();
-  }, [selectedList]);
-
-  // Extract unique assignees when timers change
-  useEffect(() => {
-    const allAssignees = new Set();
-    timers.forEach(timer => {
-      if (timer.assignees && timer.assignees.length > 0) {
-        timer.assignees.forEach(assignee => allAssignees.add(assignee));
-      }
-    });
-    setAssigneeList(Array.from(allAssignees).sort());
-  }, [timers]);
-
-  // Filter timers based on search term, selected assignee, and date filter
-  useEffect(() => {
-    let filtered = timers;
-
-    // Search filter
-    if (searchTerm) {
-      filtered = filtered.filter(timer =>
-        timer.taskName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        timer.description?.toLowerCase().includes(searchTerm.toLowerCase())
-      );
-    }
-
-    // Assignee filter
-    if (selectedAssignee) {
-      filtered = filtered.filter(timer =>
-        timer.assignees?.includes(selectedAssignee)
-      );
-    }
-
-    // Date filter
-    if (selectedDateFilter) {
-      const now = new Date();
-      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-
-      filtered = filtered.filter(timer => {
-        if (!timer.start_date) return false;
-
-        const timerDate = new Date(Number(timer.start_date));
-        const timerDay = new Date(timerDate.getFullYear(), timerDate.getMonth(), timerDate.getDate());
-
-        switch (selectedDateFilter) {
-          case "today":
-            return timerDay.getTime() === today.getTime();
-
-          case "yesterday":
-            const yesterday = new Date(today);
-            yesterday.setDate(yesterday.getDate() - 1);
-            return timerDay.getTime() === yesterday.getTime();
-
-          case "last3days":
-            const threeDaysAgo = new Date(today);
-            threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
-            return timerDay >= threeDaysAgo && timerDay <= today;
-
-          case "thisWeek":
-            const startOfWeek = new Date(today);
-            startOfWeek.setDate(today.getDate() - today.getDay());
-            return timerDay >= startOfWeek && timerDay <= today;
-
-          case "lastWeek":
-            const startOfLastWeek = new Date(today);
-            startOfLastWeek.setDate(today.getDate() - today.getDay() - 7);
-            const endOfLastWeek = new Date(startOfLastWeek);
-            endOfLastWeek.setDate(startOfLastWeek.getDate() + 6);
-            return timerDay >= startOfLastWeek && timerDay <= endOfLastWeek;
-
-          default:
-            return true;
+        if (tokenFromUrl) {
+            localStorage.setItem(ACCESS_TOKEN_KEY, tokenFromUrl);
+            setAccessToken(tokenFromUrl);
+            window.history.replaceState({}, document.title, window.location.pathname);
+            setLoading(false);
+        } else if (storedToken) {
+            setAccessToken(storedToken);
+            setLoading(false);
+        } else {
+            handleRedirectToClickUp();
         }
-      });
+    }, []);
+
+    const handleRedirectToClickUp = () => {
+        if (!CLICKUP_CLIENT_ID || !REDIRECT_URI) {
+            setError("Configuration Error: Missing CLIENT_ID or REDIRECT_URI in environment variables.");
+            setLoading(false);
+            return;
+        }
+
+        const authUrl = `https://app.clickup.com/api?client_id=${CLICKUP_CLIENT_ID}&redirect_uri=${REDIRECT_URI}&response_type=code&scope=${OAUTH_SCOPES}`;
+        console.log("Redirecting to ClickUp for OAuth...");
+        window.location.replace(authUrl);
+    };
+
+    const logout = () => {
+        localStorage.removeItem(ACCESS_TOKEN_KEY);
+        setAccessToken(null);
+        handleRedirectToClickUp();
+    };
+
+    // Generic authorized fetch utility
+    const authorizedFetch = useCallback(async (url) => {
+        if (!accessToken) return { ok: false, status: 401, error: "Unauthorized" };
+
+        try {
+            const response = await fetch(url, {
+                headers: {
+                    'Authorization': `Bearer ${accessToken}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+            const data = await response.json();
+
+            if (response.status === 401) {
+                // Token expired or revoked
+                alert("Authorization token expired. Please re-authenticate.");
+                logout();
+                return { ok: false, status: 401, error: "Token expired" };
+            }
+
+            return { ok: response.ok, status: response.status, data, error: data.error };
+        } catch (err) {
+            return { ok: false, status: 500, error: err.message };
+        }
+    }, [accessToken]);
+
+    return { accessToken, loading, error, logout, authorizedFetch };
+}
+
+// --- MAIN APPLICATION COMPONENT ---
+export default function ListTimerApp() {
+    const { loading, error, logout, authorizedFetch } = useAuth();
+    const [spaces, setSpaces] = useState([]);
+    const [folders, setFolders] = useState([]);
+    const [lists, setLists] = useState([]);
+    const [timers, setTimers] = useState([]);
+    const [apiStatus, setApiStatus] = useState({ loading: false, error: null });
+
+    const [selectedSpaceId, setSelectedSpaceId] = useState('');
+    const [selectedFolderId, setSelectedFolderId] = useState('');
+    const [selectedListId, setSelectedListId] = useState('');
+
+    // 1. Fetch Spaces
+    useEffect(() => {
+        if (!authorizedFetch) return;
+
+        const fetchSpaces = async () => {
+            setApiStatus({ loading: true, error: null });
+            const { ok, data, error } = await authorizedFetch('/api/spaces');
+
+            if (ok) {
+                setSpaces(data.data);
+                if (data.data.length > 0) setSelectedSpaceId(data.data[0].id);
+            } else {
+                setApiStatus({ loading: false, error: `Failed to load spaces: ${error}` });
+            }
+            setApiStatus(prev => ({ ...prev, loading: false }));
+        };
+        fetchSpaces();
+    }, [authorizedFetch]);
+
+    // 2. Fetch Folders when Space changes
+    useEffect(() => {
+        setFolders([]);
+        setSelectedFolderId('');
+        if (!selectedSpaceId || !authorizedFetch) return;
+
+        const fetchFolders = async () => {
+            setApiStatus({ loading: true, error: null });
+            const { ok, data, error } = await authorizedFetch(`/api/folders?spaceId=${selectedSpaceId}`);
+
+            if (ok) {
+                setFolders(data.data);
+                // If there are folders, select the first one. If not, proceed to lists using spaceId (ungrouped lists)
+                if (data.data.length > 0) {
+                    setSelectedFolderId(data.data[0].id);
+                } else {
+                    // This space has no folders, so treat the spaceId as the folderId for lists API
+                    setSelectedFolderId(selectedSpaceId);
+                }
+            } else {
+                setApiStatus({ loading: false, error: `Failed to load folders: ${error}` });
+            }
+            setApiStatus(prev => ({ ...prev, loading: false }));
+        };
+        fetchFolders();
+    }, [selectedSpaceId, authorizedFetch]);
+
+    // 3. Fetch Lists when Folder changes
+    useEffect(() => {
+        setLists([]);
+        setSelectedListId('');
+        if (!selectedFolderId || !authorizedFetch) return;
+
+        const fetchLists = async () => {
+            setApiStatus({ loading: true, error: null });
+            const fetchId = selectedFolderId; // Either a Folder ID or a Space ID (for ungrouped lists)
+
+            // Note: ClickUp uses 'folderId' parameter even for ungrouped lists inside a Space.
+            const { ok, data, error } = await authorizedFetch(`/api/lists?folderId=${fetchId}`);
+
+            if (ok) {
+                setLists(data.data);
+                if (data.data.length > 0) setSelectedListId(data.data[0].id);
+            } else {
+                setApiStatus({ loading: false, error: `Failed to load lists: ${error}` });
+            }
+            setApiStatus(prev => ({ ...prev, loading: false }));
+        };
+        fetchLists();
+    }, [selectedFolderId, authorizedFetch]);
+
+    // 4. Fetch Time Entries when List changes
+    const fetchTimers = useCallback(async (listId) => {
+        if (!listId || !authorizedFetch) {
+            setTimers([]);
+            return;
+        }
+
+        setApiStatus({ loading: true, error: null });
+        const { ok, data, error } = await authorizedFetch(`/api/tasks?listId=${listId}`);
+
+        if (ok) {
+            setTimers(data.data);
+        } else {
+            setApiStatus({ loading: false, error: `Failed to load time entries: ${error}` });
+        }
+        setApiStatus(prev => ({ ...prev, loading: false }));
+    }, [authorizedFetch]);
+
+    // Auto-fetch timers when selected list changes
+    useEffect(() => {
+        fetchTimers(selectedListId);
+    }, [selectedListId, fetchTimers]);
+
+
+    // --- RENDERING ---
+
+    if (loading) {
+        return (
+            <div className="flex items-center justify-center h-screen bg-gray-50">
+                <div className="p-6 bg-white rounded-xl shadow-lg flex items-center space-x-4">
+                    <RefreshCw className="w-6 h-6 animate-spin text-indigo-500" />
+                    <p className="text-gray-700">Authorizing with ClickUp...</p>
+                </div>
+            </div>
+        );
     }
 
-    setFilteredTimers(filtered);
-  }, [searchTerm, selectedAssignee, selectedDateFilter, timers]);
-
-  // Convert seconds to H:M:S
-  function formatTime(seconds) {
-    const h = Math.floor(seconds / 3600);
-    const m = Math.floor((seconds % 3600) / 60);
-    const s = seconds % 60;
-    return `${h}h ${m}m ${s}s`;
-  }
-
-  const clearFilters = () => {
-    setSearchTerm("");
-    setSelectedAssignee("");
-    setSelectedDateFilter("");
-  };
-
-  const getDateFilterLabel = (value) => {
-    const option = dateFilterOptions.find(opt => opt.value === value);
-    return option ? option.label : "All Dates";
-  };
-
-  return (
-    <div className="max-w-6xl mx-auto p-6">
-      {/* Header */}
-   <div className="mb-8 flex items-center justify-between">
-  <div>
-    <h1 className="text-3xl font-bold text-gray-900 mb-2">Timer Dashboard</h1>
-    <p className="text-gray-600">Track and manage your task timers across spaces and lists</p>
-  </div>
-  <Link href="./book-mark" className="">
-    <button className="bg-black cursor-pointer text-white px-6 py-3 rounded-lg hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 transition-all font-medium">
-      Book Mark for Loom Videos
-    </button>
-  </Link>
-</div>
-
-      {/* Navigation Section */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-8">
-        <h2 className="text-lg font-semibold text-gray-800 mb-4">Workspace Navigation</h2>
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Space</label>
-            <select
-              className="w-full border border-gray-300 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-              value={selectedSpace}
-              onChange={e => setSelectedSpace(e.target.value)}
-            >
-              {spaces.map(space => (
-                <option key={space.id} value={space.id}>
-                  {space.name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {folders.length > 0 && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Folder</label>
-              <select
-                className="w-full border border-gray-300 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-                value={selectedFolder}
-                onChange={e => setSelectedFolder(e.target.value)}
-              >
-                {folders.map(folder => (
-                  <option key={folder.id} value={folder.id}>
-                    {folder.name}
-                  </option>
-                ))}
-              </select>
+    if (error) {
+        return (
+            <div className="p-8 bg-red-100 border border-red-400 text-red-700 rounded-lg shadow-lg">
+                <h2 className="text-xl font-bold mb-4">Authorization Error</h2>
+                <p>{error}</p>
+                <button
+                    onClick={logout}
+                    className="mt-4 px-4 py-2 bg-red-500 text-white rounded-lg shadow hover:bg-red-600 transition duration-150"
+                >
+                    <LogOut className="inline w-4 h-4 mr-2" />
+                    Logout and Retry
+                </button>
             </div>
-          )}
+        );
+    }
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">List</label>
-            <select
-              className="w-full border border-gray-300 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-              value={selectedList}
-              onChange={e => setSelectedList(e.target.value)}
-            >
-              {lists.map(list => (
-                <option key={list.id} value={list.id}>
-                  {list.name}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-      </div>
+    const totalTimeTracked = timers.reduce((sum, timer) => sum + timer.duration, 0);
 
-      {/* Search and Filter Section */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-8">
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 items-end">
-          {/* Search Input */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Search Timers</label>
-            <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <svg className="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
-              </div>
-              <input
-                type="text"
-                placeholder="Search by task name or description..."
-                className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-                value={searchTerm}
-                onChange={e => setSearchTerm(e.target.value)}
-              />
-            </div>
-          </div>
+    return (
+        <div className="min-h-screen bg-gray-100 p-4 md:p-8 font-sans">
+            <script src="https://cdn.tailwindcss.com"></script>
+            <style jsx global>{`
+                @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+                body { font-family: 'Inter', sans-serif; }
+                .fake-time-entry {
+                    border-left: 4px solid #ef4444; /* Red border for fake time */
+                    opacity: 0.8;
+                }
+            `}</style>
 
-          {/* Assignee Filter */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Filter by Assignee</label>
-            <div className="relative">
-              <button
-                className="w-full flex items-center justify-between px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all bg-white"
-                onClick={() => setIsAssigneeDropdownOpen(!isAssigneeDropdownOpen)}
-              >
-                <span className={selectedAssignee ? "text-gray-900" : "text-gray-500"}>
-                  {selectedAssignee || "All Assignees"}
-                </span>
-                <svg className="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
-              </button>
+            <header className="flex justify-between items-center mb-8 pb-4 border-b border-gray-200">
+                <h1 className="text-3xl font-bold text-gray-800 flex items-center">
+                    <Clock className="w-7 h-7 mr-3 text-indigo-600" />
+                    ClickUp Time Dashboard (OAuth)
+                </h1>
+                <button
+                    onClick={logout}
+                    className="flex items-center px-4 py-2 bg-gray-200 text-gray-700 rounded-lg shadow-md hover:bg-gray-300 transition duration-150 text-sm"
+                >
+                    <LogOut className="w-4 h-4 mr-2" />
+                    Logout
+                </button>
+            </header>
 
-              {isAssigneeDropdownOpen && (
-                <div className="absolute z-20 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-auto">
-                  <button
-                    className="w-full text-left px-4 py-2 hover:bg-gray-50 text-gray-700 border-b border-gray-100"
-                    onClick={() => {
-                      setSelectedAssignee("");
-                      setIsAssigneeDropdownOpen(false);
-                    }}
-                  >
-                    All Assignees
-                  </button>
-                  {assigneeList.map(assignee => (
-                    <button
-                      key={assignee}
-                      className="w-full text-left px-4 py-2 hover:bg-gray-50 text-gray-700"
-                      onClick={() => {
-                        setSelectedAssignee(assignee);
-                        setIsAssigneeDropdownOpen(false);
-                      }}
+            {/* Selection Dropdowns */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8 bg-white p-4 rounded-xl shadow-md">
+                <div className='flex flex-col'>
+                    <label className="text-sm font-medium text-gray-600 mb-1 flex items-center">
+                        <Layers className="w-4 h-4 mr-1 text-indigo-500" /> Space
+                    </label>
+                    <select
+                        value={selectedSpaceId}
+                        onChange={(e) => setSelectedSpaceId(e.target.value)}
+                        className="p-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
                     >
-                      {assignee}
-                    </button>
-                  ))}
+                        {spaces.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                    </select>
                 </div>
-              )}
-            </div>
-          </div>
 
-          {/* Date Filter */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Filter by Date</label>
-            <div className="relative">
-              <button
-                className="w-full flex items-center justify-between px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all bg-white"
-                onClick={() => setIsDateDropdownOpen(!isDateDropdownOpen)}
-              >
-                <span className={selectedDateFilter ? "text-gray-900" : "text-gray-500"}>
-                  {getDateFilterLabel(selectedDateFilter)}
-                </span>
-                <svg className="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
-              </button>
-
-              {isDateDropdownOpen && (
-                <div className="absolute z-20 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-auto">
-                  {dateFilterOptions.map(option => (
-                    <button
-                      key={option.value}
-                      className="w-full text-left px-4 py-2 hover:bg-gray-50 text-gray-700 border-b border-gray-100 last:border-b-0"
-                      onClick={() => {
-                        setSelectedDateFilter(option.value);
-                        setIsDateDropdownOpen(false);
-                      }}
+                <div className='flex flex-col'>
+                    <label className="text-sm font-medium text-gray-600 mb-1 flex items-center">
+                        <Folder className="w-4 h-4 mr-1 text-indigo-500" /> Folder
+                    </label>
+                    <select
+                        value={selectedFolderId}
+                        onChange={(e) => setSelectedFolderId(e.target.value)}
+                        className="p-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
+                        disabled={folders.length === 0}
                     >
-                      {option.label}
-                    </button>
-                  ))}
+                        {folders.map(f => (
+                            <option key={f.id} value={f.id}>
+                                {f.name}
+                            </option>
+                        ))}
+                         {/* Option for ungrouped lists in the space itself */}
+                        {selectedFolderId === selectedSpaceId && <option value={selectedSpaceId}>Ungrouped Lists</option>}
+                    </select>
                 </div>
-              )}
-            </div>
-          </div>
 
-          {/* Clear Filters Button */}
-          <div>
-            <button
-              onClick={clearFilters}
-              className="w-full px-6 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-gray-500 transition-all font-medium"
-            >
-              Clear Filters
-            </button>
-          </div>
-        </div>
-
-        {/* Filter Summary */}
-        {(searchTerm || selectedAssignee || selectedDateFilter) && (
-          <div className="mt-4 flex flex-wrap gap-2">
-            {searchTerm && (
-              <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                Search: "{searchTerm}"
-                <button
-                  onClick={() => setSearchTerm("")}
-                  className="ml-1 hover:text-blue-600 focus:outline-none"
-                >
-                  ×
-                </button>
-              </span>
-            )}
-            {selectedAssignee && (
-              <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                Assignee: {selectedAssignee}
-                <button
-                  onClick={() => setSelectedAssignee("")}
-                  className="ml-1 hover:text-green-600 focus:outline-none"
-                >
-                  ×
-                </button>
-              </span>
-            )}
-            {selectedDateFilter && (
-              <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
-                Date: {getDateFilterLabel(selectedDateFilter)}
-                <button
-                  onClick={() => setSelectedDateFilter("")}
-                  className="ml-1 hover:text-purple-600 focus:outline-none"
-                >
-                  ×
-                </button>
-              </span>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* Timers Section */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6">
-          <div>
-            <h2 className="text-xl font-semibold text-gray-800">Task Timers</h2>
-            <p className="text-sm text-gray-600 mt-1">
-              Showing {filteredTimers.length} of {timers.length} timers
-            </p>
-          </div>
-          {loading && (
-            <div className="flex items-center text-sm text-gray-500 mt-2 sm:mt-0">
-              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500 mr-2"></div>
-              Loading timers...
-            </div>
-          )}
-        </div>
-
-        {filteredTimers.length === 0 ? (
-          <div className="text-center py-12">
-            <div className="text-gray-400 mb-4">
-              <svg className="w-16 h-16 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            </div>
-            <h3 className="text-lg font-medium text-gray-900 mb-2">No timers found</h3>
-            <p className="text-gray-600 max-w-sm mx-auto">
-              {timers.length === 0
-                ? "No timers available for the selected list."
-                : "No timers match your current filters. Try adjusting your search or filters."}
-            </p>
-          </div>
-        ) : (
-          <div className="grid gap-4">
-            {filteredTimers.map(timer => (
-              <div key={timer.taskId + timer.startTime} className="border border-gray-200 rounded-xl p-6 hover:shadow-md transition-all duration-200 bg-white group">
-                <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4">
-                  <div className={timer.source === "clickup" ? "bg-red-500" : "flex-1"}
->
-                    <div className="flex flex-col sm:flex-row sm:items-start justify-between mb-3">
-                      <h3 className="font-semibold text-gray-900 text-lg mb-2 sm:mb-0 group-hover:text-blue-600 transition-colors">
-                        <a
-                          href={timer.taskUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="hover:underline"
-                        >
-                          {timer.taskName}
-                        </a>
-                      </h3>
-                      <div className="flex items-center gap-3">
-                        <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                          timer.status === 'running'
-                            ? 'bg-yellow-100 text-yellow-800 border border-yellow-200'
-                            : 'bg-green-100 text-green-800 border border-green-200'
-                        }`}>
-                          {timer.status.charAt(0).toUpperCase() + timer.status.slice(1)}
-                        </span>
-                        <span className="font-semibold text-green-600 text-lg">
-                          {formatTime(Math.floor(timer.duration / 1000))}
-                        </span>
-                      </div>
-                    </div>
-
-                    {timer.description && (
-                      <p className="text-gray-700 mb-4 leading-relaxed">{timer.description}</p>
-                    )}
-
-                    <div className="flex flex-wrap gap-6 text-sm text-gray-600">
-                      <div className="flex items-center gap-2">
-                        <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                        </svg>
-                        <span>By: {timer.user}</span>
-                      </div>
-
-
-                      {timer.assignees && timer.assignees.length > 0 && (
-                        <div className="flex items-center gap-2">
-                          <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-                          </svg>
-                          <span>Assigned to: {timer.assignees.join(", ")}</span>
-                        </div>
-                      )}
-                    </div>
-<div className="flex flex-wrap gap-6 text-sm text-gray-600">
-                      <div className="flex items-center gap-2">
-                        <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                        </svg>
-                        <span>source :{timer.source}</span>
-                      </div>
-
-
-                      {timer.assignees && timer.assignees.length > 0 && (
-                        <div className="flex items-center gap-2">
-                          <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-                          </svg>
-                          <span>Assigned to: {timer.assignees.join(", ")}</span>
-                        </div>
-                      )}
-                    </div>
-                    {(timer.start_date || timer.due_date) && (
-                      <div className="flex flex-wrap gap-4 mt-4 text-xs text-gray-500">
-                        {timer.start_date && (
-                          <div className="flex items-center gap-1">
-                            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                            </svg>
-                            Start: {new Date(Number(timer.start_date)).toLocaleString()}
-                          </div>
-                        )}
-                        {timer.due_date && (
-                          <div className="flex items-center gap-1">
-                            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
-                            Due: {new Date(Number(timer.due_date)).toLocaleString()}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
+                <div className='flex flex-col'>
+                    <label className="text-sm font-medium text-gray-600 mb-1 flex items-center">
+                        <List className="w-4 h-4 mr-1 text-indigo-500" /> List
+                    </label>
+                    <select
+                        value={selectedListId}
+                        onChange={(e) => setSelectedListId(e.target.value)}
+                        className="p-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
+                        disabled={lists.length === 0}
+                    >
+                        {lists.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+                    </select>
                 </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
-  );
+            </div>
+
+            {/* Status and Summary */}
+            <div className="mb-6 flex justify-between items-center">
+                <div className="text-xl font-semibold text-gray-700 flex items-center">
+                    <TrendingUp className="w-5 h-5 mr-2 text-green-500" />
+                    Total Time Tracked:
+                    <span className="ml-2 text-indigo-600">{formatDuration(totalTimeTracked)}</span>
+                </div>
+
+                {apiStatus.loading && (
+                    <div className="flex items-center text-indigo-500">
+                        <RefreshCw className="w-4 h-4 animate-spin mr-2" /> Fetching Data...
+                    </div>
+                )}
+                {apiStatus.error && (
+                    <div className="text-sm text-red-500 p-2 bg-red-100 rounded-md border border-red-300">{apiStatus.error}</div>
+                )}
+            </div>
+
+            {/* Time Entries Table */}
+            <div className="bg-white rounded-xl shadow-lg overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                        <tr>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User</th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Task</th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Duration</th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Source</th>
+                        </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                        {timers.length === 0 && !apiStatus.loading ? (
+                             <tr>
+                                <td colSpan="5" className="px-6 py-4 text-center text-gray-500">
+                                    {selectedListId ? "No time entries found for this list in the last 6 months." : "Please select a List to view time entries."}
+                                </td>
+                            </tr>
+                        ) : (
+                            timers.map(timer => (
+                                <tr
+                                    key={timer.taskId}
+                                    className={timer.isFake ? 'fake-time-entry hover:bg-red-50 transition' : 'hover:bg-gray-50 transition'}
+                                >
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                                        <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                                            timer.status === 'running' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+                                        }`}>
+                                            {timer.status}
+                                        </span>
+                                    </td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 flex items-center">
+                                        <User className='w-4 h-4 mr-2 text-indigo-400' />
+                                        {timer.user}
+                                    </td>
+                                    <td className="px-6 py-4 text-sm text-gray-900 max-w-xs truncate">
+                                        <a
+                                            href={timer.taskUrl}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="text-indigo-600 hover:text-indigo-800 font-medium"
+                                        >
+                                            {timer.taskName}
+                                        </a>
+                                    </td>
+                                    <td className={`px-6 py-4 whitespace-nowrap text-sm font-semibold ${timer.isFake ? 'text-red-600' : 'text-gray-900'}`}>
+                                        {formatDuration(timer.duration)}
+                                    </td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-xs text-gray-500">
+                                        {timer.isFake ? 'MANUAL (Fake)' : timer.source}
+                                    </td>
+                                </tr>
+                            ))
+                        )}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    );
 }
