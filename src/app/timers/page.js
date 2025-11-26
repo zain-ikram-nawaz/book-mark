@@ -8,7 +8,7 @@ import { RefreshCw, LogOut, Clock, Layers, Folder, List, User, TrendingUp } from
 const CLICKUP_CLIENT_ID = process.env.NEXT_PUBLIC_CLICKUP_CLIENT_ID;
 const REDIRECT_URI = process.env.NEXT_PUBLIC_CLICKUP_REDIRECT_URI;
 // Scopes needed for time tracking and task/space hierarchy
-const OAUTH_SCOPES = 'time_tracking:read task:read space:read';
+const OAUTH_SCOPES = 'team:read time_tracking:read task:read list:read space:read user:read';
 const ACCESS_TOKEN_KEY = 'clickup_access_token';
 
 // Helper to format duration (ms to HH:MM:SS)
