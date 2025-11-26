@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { RefreshCw, LogOut, Clock, Layers, Folder, List, User, TrendingUp } from 'lucide-react';
+import { RefreshCw, LogOut, Clock, Layers, Folder, List, User, TrendingUp, AlertTriangle, Calendar } from 'lucide-react';
 
 // --- CONFIGURATION ---
 // Environment variables must be set with NEXT_PUBLIC_ prefix for client-side access
@@ -10,6 +10,17 @@ const REDIRECT_URI = process.env.NEXT_PUBLIC_CLICKUP_REDIRECT_URI;
 // Scopes needed for time tracking and task/space hierarchy
 const OAUTH_SCOPES = 'team:read time_tracking:read task:read list:read space:read user:read';
 const ACCESS_TOKEN_KEY = 'clickup_access_token';
+
+// Date filter options
+const DATE_FILTER_OPTIONS = [
+    { value: 'today', label: 'Today' },
+    { value: 'yesterday', label: 'Yesterday' },
+    { value: '3days', label: 'Last 3 Days' },
+    { value: '5days', label: 'Last 5 Days' },
+    { value: 'week', label: 'Last Week' },
+    { value: 'month', label: 'Last Month' },
+    { value: 'all', label: 'All Time' }
+];
 
 // Helper to format duration (ms to HH:MM:SS)
 const formatDuration = (ms) => {
@@ -20,6 +31,45 @@ const formatDuration = (ms) => {
 
     const pad = (num) => String(num).padStart(2, '0');
     return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
+};
+
+// Helper to calculate date range based on filter
+const getDateRange = (filter) => {
+    const now = new Date();
+    const startDate = new Date();
+
+    switch (filter) {
+        case 'today':
+            startDate.setHours(0, 0, 0, 0);
+            return { start: startDate.getTime(), end: now.getTime() };
+
+        case 'yesterday':
+            startDate.setDate(now.getDate() - 1);
+            startDate.setHours(0, 0, 0, 0);
+            const yesterdayEnd = new Date(startDate);
+            yesterdayEnd.setHours(23, 59, 59, 999);
+            return { start: startDate.getTime(), end: yesterdayEnd.getTime() };
+
+        case '3days':
+            startDate.setDate(now.getDate() - 3);
+            return { start: startDate.getTime(), end: now.getTime() };
+
+        case '5days':
+            startDate.setDate(now.getDate() - 5);
+            return { start: startDate.getTime(), end: now.getTime() };
+
+        case 'week':
+            startDate.setDate(now.getDate() - 7);
+            return { start: startDate.getTime(), end: now.getTime() };
+
+        case 'month':
+            startDate.setMonth(now.getMonth() - 1);
+            return { start: startDate.getTime(), end: now.getTime() };
+
+        case 'all':
+        default:
+            return { start: null, end: null };
+    }
 };
 
 // --- AUTHENTICATION PROVIDER ---
@@ -100,11 +150,34 @@ export default function ListTimerApp() {
     const [folders, setFolders] = useState([]);
     const [lists, setLists] = useState([]);
     const [timers, setTimers] = useState([]);
+    const [filteredTimers, setFilteredTimers] = useState([]);
     const [apiStatus, setApiStatus] = useState({ loading: false, error: null });
 
     const [selectedSpaceId, setSelectedSpaceId] = useState('');
     const [selectedFolderId, setSelectedFolderId] = useState('');
     const [selectedListId, setSelectedListId] = useState('');
+    const [selectedDateFilter, setSelectedDateFilter] = useState('week');
+
+    // Filter timers based on date selection
+    useEffect(() => {
+        if (timers.length === 0) {
+            setFilteredTimers([]);
+            return;
+        }
+
+        if (selectedDateFilter === 'all') {
+            setFilteredTimers(timers);
+            return;
+        }
+
+        const dateRange = getDateRange(selectedDateFilter);
+        const filtered = timers.filter(timer => {
+            const timerDate = new Date(timer.startTime).getTime();
+            return timerDate >= dateRange.start && timerDate <= dateRange.end;
+        });
+
+        setFilteredTimers(filtered);
+    }, [timers, selectedDateFilter]);
 
     // 1. Fetch Spaces
     useEffect(() => {
@@ -134,6 +207,7 @@ export default function ListTimerApp() {
         setLists([]);
         setSelectedListId('');
         setTimers([]);
+        setFilteredTimers([]);
 
         if (!selectedSpaceId || !authorizedFetch) return;
 
@@ -163,6 +237,7 @@ export default function ListTimerApp() {
         setLists([]);
         setSelectedListId('');
         setTimers([]);
+        setFilteredTimers([]);
 
         if (!selectedFolderId || !authorizedFetch) return;
 
@@ -186,17 +261,17 @@ export default function ListTimerApp() {
         fetchLists();
     }, [selectedFolderId, authorizedFetch]);
 
-    // 4. Fetch Time Entries when List changes
+    // 4. Fetch Time Entries when List changes - ONLY ONCE when list is selected
     const fetchTimers = useCallback(async (listId) => {
         if (!listId || !authorizedFetch) {
             setTimers([]);
+            setFilteredTimers([]);
             return;
         }
 
         console.log(`🔍 Fetching time entries for list: ${listId}`);
         setApiStatus({ loading: true, error: null });
 
-        // *** FIXED: Use the listId parameter instead of hardcoded value ***
         const { ok, data, error } = await authorizedFetch(`/api/tasks?listId=${listId}`);
 
         if (ok) {
@@ -213,16 +288,39 @@ export default function ListTimerApp() {
         } else {
             setApiStatus({ loading: false, error: `Failed to load time entries: ${error}` });
             setTimers([]);
+            setFilteredTimers([]);
             console.error(`❌ Failed to load time entries for list ${listId}:`, error);
         }
         setApiStatus(prev => ({ ...prev, loading: false }));
     }, [authorizedFetch]);
 
-    // Auto-fetch timers when selected list changes
+    // Auto-fetch timers ONLY when selected list changes - no auto-refresh
     useEffect(() => {
-        fetchTimers(selectedListId);
-    }, [selectedListId, fetchTimers]);
+        if (selectedListId) {
+            fetchTimers(selectedListId);
+        }
+    }, [selectedListId]);
 
+    // Manual refresh function
+    const handleManualRefresh = () => {
+        if (selectedListId) {
+            fetchTimers(selectedListId);
+        }
+    };
+
+    // Calculate total time for filtered timers
+    const totalFilteredTime = filteredTimers.reduce((sum, timer) => sum + timer.duration, 0);
+
+    // Get date range display text
+    const getDateRangeDisplay = () => {
+        if (selectedDateFilter === 'all') return 'All Time';
+
+        const range = getDateRange(selectedDateFilter);
+        const startDate = new Date(range.start);
+        const endDate = new Date(range.end);
+
+        return `${startDate.toLocaleDateString()} - ${endDate.toLocaleDateString()}`;
+    };
 
     // --- RENDERING ---
 
@@ -253,36 +351,34 @@ export default function ListTimerApp() {
         );
     }
 
-    const totalTimeTracked = timers.reduce((sum, timer) => sum + timer.duration, 0);
-
     return (
         <div className="min-h-screen bg-gray-100 p-4 md:p-8 font-sans">
-            <script src="https://cdn.tailwindcss.com"></script>
-            <style jsx global>{`
-                @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
-                body { font-family: 'Inter', sans-serif; }
-                .fake-time-entry {
-                    border-left: 4px solid #ef4444; /* Red border for fake time */
-                    opacity: 0.8;
-                }
-            `}</style>
-
             <header className="flex justify-between items-center mb-8 pb-4 border-b border-gray-200">
                 <h1 className="text-3xl font-bold text-gray-800 flex items-center">
                     <Clock className="w-7 h-7 mr-3 text-indigo-600" />
                     ClickUp Time Dashboard (OAuth)
                 </h1>
-                <button
-                    onClick={logout}
-                    className="flex items-center px-4 py-2 bg-gray-200 text-gray-700 rounded-lg shadow-md hover:bg-gray-300 transition duration-150 text-sm"
-                >
-                    <LogOut className="w-4 h-4 mr-2" />
-                    Logout
-                </button>
+                <div className="flex items-center gap-4">
+                    <button
+                        onClick={handleManualRefresh}
+                        disabled={apiStatus.loading || !selectedListId}
+                        className="flex items-center px-4 py-2 bg-indigo-500 text-white rounded-lg shadow-md hover:bg-indigo-600 transition duration-150 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        <RefreshCw className={`w-4 h-4 mr-2 ${apiStatus.loading ? 'animate-spin' : ''}`} />
+                        Refresh Data
+                    </button>
+                    <button
+                        onClick={logout}
+                        className="flex items-center px-4 py-2 bg-gray-200 text-gray-700 rounded-lg shadow-md hover:bg-gray-300 transition duration-150 text-sm"
+                    >
+                        <LogOut className="w-4 h-4 mr-2" />
+                        Logout
+                    </button>
+                </div>
             </header>
 
             {/* Selection Dropdowns */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8 bg-white p-4 rounded-xl shadow-md">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8 bg-white p-4 rounded-xl shadow-md">
                 <div className='flex flex-col'>
                     <label className="text-sm font-medium text-gray-600 mb-1 flex items-center">
                         <Layers className="w-4 h-4 mr-1 text-indigo-500" /> Space
@@ -333,17 +429,45 @@ export default function ListTimerApp() {
                         {lists.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
                     </select>
                 </div>
+
+                <div className='flex flex-col'>
+                    <label className="text-sm font-medium text-gray-600 mb-1 flex items-center">
+                        <Calendar className="w-4 h-4 mr-1 text-indigo-500" /> Date Range
+                    </label>
+                    <select
+                        value={selectedDateFilter}
+                        onChange={(e) => setSelectedDateFilter(e.target.value)}
+                        className="p-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
+                    >
+                        {DATE_FILTER_OPTIONS.map(option => (
+                            <option key={option.value} value={option.value}>
+                                {option.label}
+                            </option>
+                        ))}
+                    </select>
+                </div>
             </div>
 
             {/* Status and Summary */}
             <div className="mb-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                <div className="text-xl font-semibold text-gray-700 flex items-center">
-                    <TrendingUp className="w-5 h-5 mr-2 text-green-500" />
-                    Total Time Tracked:
-                    <span className="ml-2 text-indigo-600">{formatDuration(totalTimeTracked)}</span>
-                    {timers.length > 0 && (
-                        <span className="ml-3 text-sm text-gray-500">({timers.length} entries)</span>
-                    )}
+                <div className="flex flex-col gap-2">
+                    <div className="text-xl font-semibold text-gray-700 flex items-center">
+                        <TrendingUp className="w-5 h-5 mr-2 text-green-500" />
+                        Filtered Time:
+                        <span className="ml-2 text-indigo-600">{formatDuration(totalFilteredTime)}</span>
+                        {filteredTimers.length > 0 && (
+                            <span className="ml-3 text-sm text-gray-500">({filteredTimers.length} entries)</span>
+                        )}
+                    </div>
+                    <div className="text-sm text-gray-500 flex items-center">
+                        <Calendar className="w-4 h-4 mr-1" />
+                        {getDateRangeDisplay()}
+                        {timers.length > 0 && (
+                            <span className="ml-3">
+                                (Total: {formatDuration(timers.reduce((sum, timer) => sum + timer.duration, 0))} from {timers.length} entries)
+                            </span>
+                        )}
+                    </div>
                 </div>
 
                 {apiStatus.loading && (
@@ -366,22 +490,32 @@ export default function ListTimerApp() {
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User</th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Task</th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Duration</th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Start Time</th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">End Time</th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Duration</th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Source</th>
                         </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
-                        {timers.length === 0 && !apiStatus.loading ? (
-                             <tr>
-                                <td colSpan="5" className="px-6 py-4 text-center text-gray-500">
-                                    {selectedListId ? "No time entries found for this list in the last 6 months." : "Please select a List to view time entries."}
+                        {filteredTimers.length === 0 && !apiStatus.loading ? (
+                            <tr>
+                                <td colSpan="7" className="px-6 py-4 text-center text-gray-500">
+                                    {selectedListId
+                                        ? `No time entries found for this date range (${DATE_FILTER_OPTIONS.find(opt => opt.value === selectedDateFilter)?.label}).`
+                                        : "Please select a List to view time entries."}
                                 </td>
                             </tr>
                         ) : (
-                            timers.map((timer, index) => (
+                            filteredTimers.map((timer, index) => (
                                 <tr
                                     key={`${timer.taskId}_${timer.userId}_${index}`}
-                                    className={timer.isFake ? 'fake-time-entry hover:bg-red-50 transition' : 'hover:bg-gray-50 transition'}
+                                    className={`
+                                        transition-all duration-200
+                                        ${timer.isFake
+                                            ? 'bg-red-50 hover:bg-red-100 border-l-4 border-l-red-400'
+                                            : 'hover:bg-gray-50'
+                                        }
+                                    `}
                                 >
                                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                                         <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
@@ -389,6 +523,9 @@ export default function ListTimerApp() {
                                         }`}>
                                             {timer.status}
                                         </span>
+                                        {timer.isFake && (
+                                            <AlertTriangle className="inline w-4 h-4 ml-1 text-red-500" />
+                                        )}
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 flex items-center">
                                         <User className='w-4 h-4 mr-2 text-indigo-400' />
@@ -400,19 +537,42 @@ export default function ListTimerApp() {
                                                 href={timer.taskUrl}
                                                 target="_blank"
                                                 rel="noopener noreferrer"
-                                                className="text-indigo-600 hover:text-indigo-800 font-medium"
+                                                className={`font-medium ${
+                                                    timer.isFake
+                                                        ? 'text-red-600 hover:text-red-800'
+                                                        : 'text-indigo-600 hover:text-indigo-800'
+                                                }`}
                                             >
                                                 {timer.taskName}
                                             </a>
                                         ) : (
-                                            <span>{timer.taskName}</span>
+                                            <span className={timer.isFake ? 'text-red-600' : ''}>
+                                                {timer.taskName}
+                                            </span>
                                         )}
                                     </td>
-                                    <td className={`px-6 py-4 whitespace-nowrap text-sm font-semibold ${timer.isFake ? 'text-red-600' : 'text-gray-900'}`}>
-                                        {formatDuration(timer.duration)}
+                                    <td className={`px-6 py-4 whitespace-nowrap text-sm ${timer.isFake ? 'text-red-700' : 'text-gray-700'}`}>
+                                        {new Date(timer.startTime).toLocaleString()}
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-xs text-gray-500">
-                                        {timer.isFake ? 'MANUAL (Fake)' : timer.source}
+                                    <td className={`px-6 py-4 whitespace-nowrap text-sm ${timer.isFake ? 'text-red-700' : 'text-gray-700'}`}>
+                                        {timer.status === 'running' ? 'Running...' : new Date(timer.endTime).toLocaleString()}
+                                    </td>
+                                    <td className={`px-6 py-4 whitespace-nowrap text-sm font-semibold ${
+                                        timer.isFake ? 'text-red-600' : 'text-gray-900'
+                                    }`}>
+                                        {formatDuration(timer.duration)}
+                                        {timer.isFake && (
+                                            <span className="ml-2 text-xs text-red-500 font-normal">(Manual Entry)</span>
+                                        )}
+                                    </td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-xs">
+                                        {timer.isFake ? (
+                                            <span className="text-red-600 font-semibold bg-red-100 px-2 py-1 rounded-full">
+                                                MANUAL ENTRY
+                                            </span>
+                                        ) : (
+                                            <span className="text-gray-500">{timer.source}</span>
+                                        )}
                                     </td>
                                 </tr>
                             ))

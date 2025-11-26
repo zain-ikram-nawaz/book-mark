@@ -27,41 +27,14 @@ function mergeTimers(timers) {
         ...old,
         duration: old.duration + t.duration,
         startTime: Math.min(old.startTime, t.startTime),
+        endTime: Math.max(old.endTime, t.endTime),
       });
     } else {
       map.set(key, { ...t });
     }
   });
 
-  const merged = [...map.values()];
-
-  const fakeTimers = merged.filter(t => t.isFake);
-  const realTimers = merged.filter(t => t.isReal);
-
-  console.log(`\n📊 TIMER BREAKDOWN:`);
-  console.log(`   🟢 Real Timers: ${realTimers.length}`);
-  console.log(`   🔴 Fake Timers: ${fakeTimers.length}`);
-  console.log(`   📦 Total Merged: ${merged.length}`);
-
-  if (fakeTimers.length > 0) {
-    console.log(`\n🔴 FAKE TIME ENTRIES:`);
-    fakeTimers.forEach((timer, idx) => {
-      console.log(
-        `   ${idx + 1}. ${timer.user} - ${timer.taskName} - ${(timer.duration / 60000).toFixed(2)} min - Source: ${timer.source}`
-      );
-    });
-  }
-
-  if (realTimers.length > 0) {
-    console.log(`\n🟢 REAL TIME ENTRIES:`);
-    realTimers.forEach((timer, idx) => {
-      console.log(
-        `   ${idx + 1}. ${timer.user} - ${timer.taskName} - ${(timer.duration / 60000).toFixed(2)} min - Source: ${timer.source}`
-      );
-    });
-  }
-
-  return merged;
+  return [...map.values()];
 }
 
 // Fetch task details with caching & batching
@@ -71,8 +44,6 @@ async function fetchTaskDetails(taskIds, token) {
   const uniqueTaskIds = [...new Set(taskIds)];
   const taskDetails = new Map();
   const batchSize = 100;
-
-  console.log(`📋 Fetching details for ${uniqueTaskIds.length} tasks...`);
 
   for (let i = 0; i < uniqueTaskIds.length; i += batchSize) {
     const batch = uniqueTaskIds.slice(i, i + batchSize);
@@ -104,7 +75,6 @@ async function fetchTaskDetails(taskIds, token) {
     await new Promise(resolve => setTimeout(resolve, 50));
   }
 
-  console.log(`✅ Task details fetched: ${taskDetails.size}`);
   return taskDetails;
 }
 
@@ -160,11 +130,17 @@ export async function GET(request) {
     const taskIds = allTimeEntries.map(e => e.task?.id).filter(Boolean);
     const taskDetailsMap = await fetchTaskDetails(taskIds, token);
 
-    // Build raw timers
+    // Build raw timers with startTime + endTime
     const rawTimers = allTimeEntries.map(entry => {
       const fakeCheck = detectFakeTime(entry);
       const taskId = entry.task?.id;
       const details = taskDetailsMap.get(taskId);
+
+      const duration = Number(entry.duration || 0);
+      const start = Number(entry.start);
+
+      // endTime logic: if null, consider running
+      const end = entry.end ? Number(entry.end) : start + duration;
 
       return {
         user: entry.user?.username || entry.user?.email || "Unknown",
@@ -173,9 +149,10 @@ export async function GET(request) {
         taskName: entry.task?.name || details?.taskName || "Unknown Task",
         taskUrl: entry.task?.url || details?.taskUrl,
         listId: details?.listId,
-        startTime: Number(entry.start),
-        duration: Number(entry.duration),
-        status: entry.duration > 0 ? "stopped" : "running",
+        startTime: start,
+        endTime: end,
+        duration: duration,
+        status: entry.end ? "stopped" : "running",
         isFake: fakeCheck.isFake,
         isReal: fakeCheck.isReal,
         source: fakeCheck.source,
