@@ -1,169 +1,211 @@
 import { NextResponse } from "next/server";
 
-// Detect fake or real time entry based on source (No change)
+// Detect fake or real time entry based on source
 function detectFakeTime(entry) {
-  const src = (entry.source || "").toLowerCase();
-  const fakeSources = ["global", "manual", "batch", "clickup_api"];
-  const realSources = ["track_event", "timer", "clickup", "clickup_automatic"];
+  const src = (entry.source || "").toLowerCase();
 
-  return {
-    isFake: fakeSources.some(s => src.includes(s)),
-    isReal: realSources.some(s => src.includes(s)),
-    source: entry.source || "unknown",
-  };
+  return {
+    isFake: src === "clickup",     // Only "clickup" is fake
+    isReal: src !== "clickup",     // Everything else is real
+    source: entry.source || "unknown",
+  };
 }
 
-// Merge timers by taskId (No change)
+// Merge timers by taskId + userId + timeType (fake/real)
 function mergeTimers(timers) {
-  const map = new Map();
- 
-  timers.forEach(t => {
-    const key = t.taskId;
-    if (!key) return;
-    if (map.has(key)) {
-      const old = map.get(key);
-      map.set(key, {
-        ...old,
-        duration: old.duration + t.duration,
-        startTime: Math.min(old.startTime, t.startTime),
-        taskName: old.taskName || t.taskName,
-        user: old.user || t.user,
-      });
-    } else {
-      map.set(key, { ...t });
-    }
-  });
-  return [...map.values()];
+  const map = new Map();
+
+  timers.forEach(t => {
+    const timeType = t.isFake ? 'fake' : 'real';
+    const key = `${t.taskId}_${t.userId}_${timeType}`;
+
+    if (!key || !t.taskId) return;
+
+    if (map.has(key)) {
+      const old = map.get(key);
+      map.set(key, {
+        ...old,
+        duration: old.duration + t.duration,
+        startTime: Math.min(old.startTime, t.startTime),
+      });
+    } else {
+      map.set(key, { ...t });
+    }
+  });
+
+  const merged = [...map.values()];
+
+  const fakeTimers = merged.filter(t => t.isFake);
+  const realTimers = merged.filter(t => t.isReal);
+
+  console.log(`\n📊 TIMER BREAKDOWN:`);
+  console.log(`   🟢 Real Timers: ${realTimers.length}`);
+  console.log(`   🔴 Fake Timers: ${fakeTimers.length}`);
+  console.log(`   📦 Total Merged: ${merged.length}`);
+
+  if (fakeTimers.length > 0) {
+    console.log(`\n🔴 FAKE TIME ENTRIES:`);
+    fakeTimers.forEach((timer, idx) => {
+      console.log(
+        `   ${idx + 1}. ${timer.user} - ${timer.taskName} - ${(timer.duration / 60000).toFixed(2)} min - Source: ${timer.source}`
+      );
+    });
+  }
+
+  if (realTimers.length > 0) {
+    console.log(`\n🟢 REAL TIME ENTRIES:`);
+    realTimers.forEach((timer, idx) => {
+      console.log(
+        `   ${idx + 1}. ${timer.user} - ${timer.taskName} - ${(timer.duration / 60000).toFixed(2)} min - Source: ${timer.source}`
+      );
+    });
+  }
+
+  return merged;
 }
 
-
-// *** Task Fetching Function: Ab yeh OAuth Token use karega ***
+// Fetch task details with caching & batching
 async function fetchTaskDetails(taskIds, token) {
-    if (taskIds.length === 0) return new Map();
+  if (taskIds.length === 0) return new Map();
 
-    const uniqueTaskIds = [...new Set(taskIds)];
-    const taskDetails = new Map();
-   
-    // Hum 10 tasks tak hi limit rakhenge, jesa ke pehle tha
-    const limitedTaskIds = uniqueTaskIds.slice(0, 10);
-    const fetchPromises = limitedTaskIds.map(async (taskId) => {
-        try {
-            const res = await fetch(`https://api.clickup.com/api/v2/task/${taskId}?include_children=true`, {
-                headers: { Authorization: `Bearer ${token}` }, // *** TOKEN USE ***
-                next: { revalidate: 3600 }
-            });
-            if (res.ok) {
-                const task = await res.json();
-                taskDetails.set(taskId, {
-                    listId: task.list?.id,
-                    taskName: task.name,
-                    taskUrl: task.url,
-                });
-            } else if (res.status === 401) {
-                 console.error(`Task detail fetch failed for ${taskId}: Unauthorized`);
-            }
-        } catch (e) {
-            console.error(`Error fetching detail for task ${taskId}:`, e.message);
-        }
-    });
+  const uniqueTaskIds = [...new Set(taskIds)];
+  const taskDetails = new Map();
+  const batchSize = 100;
 
-    await Promise.all(fetchPromises);
-    return taskDetails;
+  console.log(`📋 Fetching details for ${uniqueTaskIds.length} tasks...`);
+
+  for (let i = 0; i < uniqueTaskIds.length; i += batchSize) {
+    const batch = uniqueTaskIds.slice(i, i + batchSize);
+
+    const fetchPromises = batch.map(async (taskId) => {
+      try {
+        const res = await fetch(
+          `https://api.clickup.com/api/v2/task/${taskId}?include_children=true`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+            next: { revalidate: 3600 }
+          }
+        );
+
+        if (res.ok) {
+          const task = await res.json();
+          taskDetails.set(taskId, {
+            listId: task.list?.id,
+            taskName: task.name,
+            taskUrl: task.url,
+          });
+        }
+      } catch (e) {
+        console.error(`Error fetching task ${taskId}:`, e.message);
+      }
+    });
+
+    await Promise.all(fetchPromises);
+    await new Promise(resolve => setTimeout(resolve, 50));
+  }
+
+  console.log(`✅ Task details fetched: ${taskDetails.size}`);
+  return taskDetails;
 }
 
 export async function GET(request) {
-    const authHeader = request.headers.get('Authorization');
-    const token = authHeader?.split(' ')[1];
+  const requestStartTime = Date.now();
 
-    const { searchParams } = new URL(request.url);
-    const listId = searchParams.get("listId");
-    const teamId = process.env.TEAM_ID ;
+  const authHeader = request.headers.get("Authorization");
+  const token = authHeader?.split(" ")[1];
 
-    if (!token || !listId || !teamId) {
-        return NextResponse.json(
-            { error: "Authorization Token, List ID, or Team ID missing." },
-            { status: 401 }
-        );
+  const { searchParams } = new URL(request.url);
+  const listId = searchParams.get("listId");
+  const teamId = process.env.TEAM_ID;
+
+  if (!token) return NextResponse.json({ error: "Missing token" }, { status: 401 });
+  if (!listId) return NextResponse.json({ error: "listId required" }, { status: 400 });
+  if (!teamId) return NextResponse.json({ error: "TEAM_ID missing" }, { status: 500 });
+
+  try {
+    // Fetch team members
+    const membersRes = await fetch(`https://api.clickup.com/api/v2/team/${teamId}`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+
+    const membersData = await membersRes.json();
+    const members = membersData.team?.members || [];
+
+    if (members.length === 0)
+      return NextResponse.json({ data: [], message: "No team members" });
+
+    // Fetch time entries for last 6 months
+    const sixMonthsAgo = new Date();
+    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+    const startDate = sixMonthsAgo.getTime();
+
+    const allTimeEntries = [];
+
+    for (const m of members) {
+      const userId = m.user.id;
+
+      const res = await fetch(
+        `https://api.clickup.com/api/v2/team/${teamId}/time_entries?subtasks=true&start_date=${startDate}&assignee=${userId}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      const data = await res.json();
+      if (Array.isArray(data.data)) allTimeEntries.push(...data.data);
     }
 
-    try {
-        console.log("Fetching ALL team members' time entries...");
+    if (allTimeEntries.length === 0)
+      return NextResponse.json({ data: [], message: "No time entries" });
 
-        const sixMonthsAgo = new Date();
-        sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
-        const startDate = sixMonthsAgo.getTime();
+    // Fetch task details
+    const taskIds = allTimeEntries.map(e => e.task?.id).filter(Boolean);
+    const taskDetailsMap = await fetchTaskDetails(taskIds, token);
 
-        // *** FETCH TEAM MEMBERS ***
-        const membersRes = await fetch(`https://api.clickup.com/api/v2/team/${teamId}`, {
-            headers: { Authorization: `Bearer ${token}` }
-        });
+    // Build raw timers
+    const rawTimers = allTimeEntries.map(entry => {
+      const fakeCheck = detectFakeTime(entry);
+      const taskId = entry.task?.id;
+      const details = taskDetailsMap.get(taskId);
 
-        if (!membersRes.ok) {
-            return NextResponse.json({ error: "Failed to fetch team members" }, { status: membersRes.status });
-        }
+      return {
+        user: entry.user?.username || entry.user?.email || "Unknown",
+        userId: entry.user?.id,
+        taskId,
+        taskName: entry.task?.name || details?.taskName || "Unknown Task",
+        taskUrl: entry.task?.url || details?.taskUrl,
+        listId: details?.listId,
+        startTime: Number(entry.start),
+        duration: Number(entry.duration),
+        status: entry.duration > 0 ? "stopped" : "running",
+        isFake: fakeCheck.isFake,
+        isReal: fakeCheck.isReal,
+        source: fakeCheck.source,
+      };
+    });
 
-        const membersData = await membersRes.json();
-        const members = membersData.team?.members || [];
+    // Filter by listId
+    const filtered = rawTimers.filter(t => String(t.listId) === String(listId));
 
-        console.log(`Found ${members.length} team members`);
+    if (filtered.length === 0)
+      return NextResponse.json({ data: [], message: "No entries for this list" });
 
-        // *** FETCH TIME ENTRIES FOR ALL MEMBERS ***
-        const allTimeEntries = [];
+    // Merge timers
+    const mergedTimers = mergeTimers(filtered);
 
-        for (const member of members) {
-            const userId = member.user.id;
-            const apiUrl = `https://api.clickup.com/api/v2/team/${teamId}/time_entries?subtasks=true&start_date=${startDate}&assignee=${userId}`;
+    const totalTime = Date.now() - requestStartTime;
 
-            try {
-                const timeRes = await fetch(apiUrl, {
-                    headers: { Authorization: `Bearer ${token}` }
-                });
-                const timeData = await timeRes.json();
+    return NextResponse.json({
+      data: mergedTimers,
+      meta: {
+        totalEntries: allTimeEntries.length,
+        filteredEntries: filtered.length,
+        mergedEntries: mergedTimers.length,
+        fakeTimers: mergedTimers.filter(t => t.isFake).length,
+        realTimers: mergedTimers.filter(t => t.isReal).length,
+        processingTime: `${totalTime}ms`
+      }
+    });
 
-                if (timeRes.ok && Array.isArray(timeData.data)) {
-                    allTimeEntries.push(...timeData.data);
-                    console.log(`Fetched ${timeData.data.length} entries for user ${member.user.username}`);
-                }
-            } catch (err) {
-                console.error(`Error fetching entries for user ${userId}:`, err.message);
-            }
-        }
-
-        console.log(`Total time entries fetched: ${allTimeEntries.length}`);
-
-        const taskIds = allTimeEntries.map(entry => entry.task?.id).filter(id => id);
-        const taskDetailsMap = await fetchTaskDetails(taskIds, token);
-
-        const rawTimers = allTimeEntries.map(entry => {
-            const fakeCheck = detectFakeTime(entry);
-            const taskId = entry.task?.id;
-            const details = taskId ? taskDetailsMap.get(taskId) : {};
-
-            return {
-                user: entry.user?.username || entry.user?.email || "Unknown",
-                userId: entry.user?.id,
-                taskId: taskId,
-                taskName: entry.task?.name || details?.taskName || "Unknown Task",
-                taskUrl: entry.task?.url || details?.taskUrl,
-                listId: details?.listId,
-                startTime: Number(entry.start),
-                duration: Number(entry.duration),
-                status: entry.duration > 0 ? "stopped" : "running",
-                start_date: entry.start,
-                isFake: fakeCheck.isFake,
-                isReal: fakeCheck.isReal,
-                source: fakeCheck.source,
-            };
-        }).filter(t => t.listId);
-
-        const filteredByList = rawTimers.filter(timer => String(timer.listId) === String(listId));
-        console.log(`Filtered for list ${listId}: ${filteredByList.length} entries`);
-
-        const mergedTimers = mergeTimers(filteredByList);
-        return NextResponse.json({ data: mergedTimers });
-
-    } catch (err) {
-        console.error("Error fetching tasks/timers:", err);
-        return NextResponse.json({ error: err.message }, { status: 500 });
-    }
+  } catch (err) {
+    return NextResponse.json({ error: err.message }, { status: 500 });
+  }
 }

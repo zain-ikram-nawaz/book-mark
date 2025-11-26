@@ -115,8 +115,10 @@ export default function ListTimerApp() {
             const { ok, data, error } = await authorizedFetch('/api/spaces');
 
             if (ok) {
-                setSpaces(data.data);
-                if (data.data.length > 0) setSelectedSpaceId(data.data[0].id);
+                setSpaces(data.data || []);
+                if (data.data && data.data.length > 0) {
+                    setSelectedSpaceId(data.data[0].id);
+                }
             } else {
                 setApiStatus({ loading: false, error: `Failed to load spaces: ${error}` });
             }
@@ -129,6 +131,10 @@ export default function ListTimerApp() {
     useEffect(() => {
         setFolders([]);
         setSelectedFolderId('');
+        setLists([]);
+        setSelectedListId('');
+        setTimers([]);
+
         if (!selectedSpaceId || !authorizedFetch) return;
 
         const fetchFolders = async () => {
@@ -136,9 +142,9 @@ export default function ListTimerApp() {
             const { ok, data, error } = await authorizedFetch(`/api/folders?spaceId=${selectedSpaceId}`);
 
             if (ok) {
-                setFolders(data.data);
+                setFolders(data.data || []);
                 // If there are folders, select the first one. If not, proceed to lists using spaceId (ungrouped lists)
-                if (data.data.length > 0) {
+                if (data.data && data.data.length > 0) {
                     setSelectedFolderId(data.data[0].id);
                 } else {
                     // This space has no folders, so treat the spaceId as the folderId for lists API
@@ -156,6 +162,8 @@ export default function ListTimerApp() {
     useEffect(() => {
         setLists([]);
         setSelectedListId('');
+        setTimers([]);
+
         if (!selectedFolderId || !authorizedFetch) return;
 
         const fetchLists = async () => {
@@ -166,8 +174,10 @@ export default function ListTimerApp() {
             const { ok, data, error } = await authorizedFetch(`/api/lists?folderId=${fetchId}`);
 
             if (ok) {
-                setLists(data.data);
-                if (data.data.length > 0) setSelectedListId(data.data[0].id);
+                setLists(data.data || []);
+                if (data.data && data.data.length > 0) {
+                    setSelectedListId(data.data[0].id);
+                }
             } else {
                 setApiStatus({ loading: false, error: `Failed to load lists: ${error}` });
             }
@@ -183,13 +193,27 @@ export default function ListTimerApp() {
             return;
         }
 
+        console.log(`🔍 Fetching time entries for list: ${listId}`);
         setApiStatus({ loading: true, error: null });
+
+        // *** FIXED: Use the listId parameter instead of hardcoded value ***
         const { ok, data, error } = await authorizedFetch(`/api/tasks?listId=${listId}`);
 
         if (ok) {
-            setTimers(data.data);
+            setTimers(data.data || []);
+            console.log(`✅ Loaded ${data.data?.length || 0} time entries for list ${listId}`);
+
+            // Log debug info if available
+            if (data.debug) {
+                console.log('📋 Debug Info:', data.debug);
+            }
+            if (data.meta) {
+                console.log('📊 Meta Info:', data.meta);
+            }
         } else {
             setApiStatus({ loading: false, error: `Failed to load time entries: ${error}` });
+            setTimers([]);
+            console.error(`❌ Failed to load time entries for list ${listId}:`, error);
         }
         setApiStatus(prev => ({ ...prev, loading: false }));
     }, [authorizedFetch]);
@@ -267,7 +291,9 @@ export default function ListTimerApp() {
                         value={selectedSpaceId}
                         onChange={(e) => setSelectedSpaceId(e.target.value)}
                         className="p-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
+                        disabled={spaces.length === 0}
                     >
+                        {spaces.length === 0 && <option value="">No spaces available</option>}
                         {spaces.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                     </select>
                 </div>
@@ -280,15 +306,16 @@ export default function ListTimerApp() {
                         value={selectedFolderId}
                         onChange={(e) => setSelectedFolderId(e.target.value)}
                         className="p-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
-                        disabled={folders.length === 0}
+                        disabled={folders.length === 0 && selectedFolderId !== selectedSpaceId}
                     >
+                        {folders.length === 0 && selectedFolderId === selectedSpaceId && (
+                            <option value={selectedSpaceId}>Ungrouped Lists</option>
+                        )}
                         {folders.map(f => (
                             <option key={f.id} value={f.id}>
                                 {f.name}
                             </option>
                         ))}
-                         {/* Option for ungrouped lists in the space itself */}
-                        {selectedFolderId === selectedSpaceId && <option value={selectedSpaceId}>Ungrouped Lists</option>}
                     </select>
                 </div>
 
@@ -302,17 +329,21 @@ export default function ListTimerApp() {
                         className="p-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
                         disabled={lists.length === 0}
                     >
+                        {lists.length === 0 && <option value="">No lists available</option>}
                         {lists.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
                     </select>
                 </div>
             </div>
 
             {/* Status and Summary */}
-            <div className="mb-6 flex justify-between items-center">
+            <div className="mb-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div className="text-xl font-semibold text-gray-700 flex items-center">
                     <TrendingUp className="w-5 h-5 mr-2 text-green-500" />
                     Total Time Tracked:
                     <span className="ml-2 text-indigo-600">{formatDuration(totalTimeTracked)}</span>
+                    {timers.length > 0 && (
+                        <span className="ml-3 text-sm text-gray-500">({timers.length} entries)</span>
+                    )}
                 </div>
 
                 {apiStatus.loading && (
@@ -321,7 +352,9 @@ export default function ListTimerApp() {
                     </div>
                 )}
                 {apiStatus.error && (
-                    <div className="text-sm text-red-500 p-2 bg-red-100 rounded-md border border-red-300">{apiStatus.error}</div>
+                    <div className="text-sm text-red-500 p-2 bg-red-100 rounded-md border border-red-300">
+                        {apiStatus.error}
+                    </div>
                 )}
             </div>
 
@@ -345,9 +378,9 @@ export default function ListTimerApp() {
                                 </td>
                             </tr>
                         ) : (
-                            timers.map(timer => (
+                            timers.map((timer, index) => (
                                 <tr
-                                    key={timer.taskId}
+                                    key={`${timer.taskId}_${timer.userId}_${index}`}
                                     className={timer.isFake ? 'fake-time-entry hover:bg-red-50 transition' : 'hover:bg-gray-50 transition'}
                                 >
                                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
@@ -362,14 +395,18 @@ export default function ListTimerApp() {
                                         {timer.user}
                                     </td>
                                     <td className="px-6 py-4 text-sm text-gray-900 max-w-xs truncate">
-                                        <a
-                                            href={timer.taskUrl}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className="text-indigo-600 hover:text-indigo-800 font-medium"
-                                        >
-                                            {timer.taskName}
-                                        </a>
+                                        {timer.taskUrl ? (
+                                            <a
+                                                href={timer.taskUrl}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="text-indigo-600 hover:text-indigo-800 font-medium"
+                                            >
+                                                {timer.taskName}
+                                            </a>
+                                        ) : (
+                                            <span>{timer.taskName}</span>
+                                        )}
                                     </td>
                                     <td className={`px-6 py-4 whitespace-nowrap text-sm font-semibold ${timer.isFake ? 'text-red-600' : 'text-gray-900'}`}>
                                         {formatDuration(timer.duration)}
