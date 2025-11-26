@@ -2,9 +2,9 @@ import { NextResponse } from "next/server";
 
 // OAuth credentials and redirect URI environment variables se lenge
 // CLIENT_ID, CLIENT_SECRET, REDIRECT_URI must be set in your .env.local
-const CLIENT_ID = process.env.CLICKUP_CLIENT_ID;
+const CLIENT_ID = process.env.NEXT_PUBLIC_CLICKUP_CLIENT_ID;
 const CLIENT_SECRET = process.env.CLICKUP_CLIENT_SECRET;
-const REDIRECT_URI = process.env.CLICKUP_REDIRECT_URI;
+const REDIRECT_URI = process.env.NEXT_PUBLIC_CLICKUP_REDIRECT_URI;
 
 export async function GET(request) {
     const { searchParams } = new URL(request.url);
