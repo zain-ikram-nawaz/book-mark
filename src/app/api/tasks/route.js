@@ -71,90 +71,99 @@ async function fetchTaskDetails(taskIds, token) {
     return taskDetails;
 }
 
-
 export async function GET(request) {
-    // Token ko Request Header se nikalo
     const authHeader = request.headers.get('Authorization');
-    const token = authHeader?.split(' ')[1]; // Expecting "Bearer <token>"
+    const token = authHeader?.split(' ')[1];
 
-    const { searchParams } = new URL(request.url);
-    const listId = searchParams.get("listId");
-    // TEAM_ID ab bhi ENV se aayega kyunke yeh team-level setting hai.
-    const teamId = process.env.TEAM_ID || "9014533043";
+    const { searchParams } = new URL(request.url);
+    const listId = searchParams.get("listId");
+    const teamId = process.env.TEAM_ID ;
 
-    if (!token || !listId || !teamId) {
-        return NextResponse.json(
-    	    { error: "Authorization Token, List ID, or Team ID missing." },
-    	    { status: 401 }
-        );
-    }
+    if (!token || !listId || !teamId) {
+        return NextResponse.json(
+            { error: "Authorization Token, List ID, or Team ID missing." },
+            { status: 401 }
+        );
+    }
 
-    try {
-        console.log("Fetching ALL time entries for Team ID...");
+    try {
+        console.log("Fetching ALL team members' time entries...");
 
-        // Start Date Calculate Karen (6 Months Ago)
-        const sixMonthsAgo = new Date();
-        sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
-        const startDate = sixMonthsAgo.getTime();
+        const sixMonthsAgo = new Date();
+        sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+        const startDate = sixMonthsAgo.getTime();
 
-        // 1. Time Entries Fetch karna
-        const apiUrl = `https://api.clickup.com/api/v2/team/${teamId}/time_entries?subtasks=true&start_date=${startDate}`;
+        // *** FETCH TEAM MEMBERS ***
+        const membersRes = await fetch(`https://api.clickup.com/api/v2/team/${teamId}`, {
+            headers: { Authorization: `Bearer ${token}` }
+        });
 
-        const timeRes = await fetch(apiUrl, { headers: { Authorization: `Bearer ${token}` } }); // *** TOKEN USE ***
-        const timeData = await timeRes.json();
-
-        if (!timeRes.ok) {
-            console.error("Time Entries API Error:", timeData.err);
-             if (timeRes.status === 401) {
-                 return NextResponse.json({ error: "Token is invalid or expired. Re-authentication required." }, { status: 401 });
-             }
-            return NextResponse.json({ data: [], error: timeData.err }, { status: timeRes.status });
-        }
-        if (!Array.isArray(timeData.data)) {
-            return NextResponse.json({ data: [] });
+        if (!membersRes.ok) {
+            return NextResponse.json({ error: "Failed to fetch team members" }, { status: membersRes.status });
         }
 
+        const membersData = await membersRes.json();
+        const members = membersData.team?.members || [];
 
-        const taskIds = timeData.data.map(entry => entry.task?.id).filter(id => id);
+        console.log(`Found ${members.length} team members`);
 
-        // 2. Task details fetch karna (jahan List ID hoti hai)
-        console.log(`Fetching details for ${taskIds.length} unique task IDs...`);
-        const taskDetailsMap = await fetchTaskDetails(taskIds, token); // *** TOKEN PASS ***
+        // *** FETCH TIME ENTRIES FOR ALL MEMBERS ***
+        const allTimeEntries = [];
 
-        // 3. Raw Timers banao aur 'listId' property ko merge karo
-        const rawTimers = timeData.data.map(entry => {
-            const fakeCheck = detectFakeTime(entry);
-            const taskId = entry.task?.id;
-            const details = taskId ? taskDetailsMap.get(taskId) : {};
+        for (const member of members) {
+            const userId = member.user.id;
+            const apiUrl = `https://api.clickup.com/api/v2/team/${teamId}/time_entries?subtasks=true&start_date=${startDate}&assignee=${userId}`;
 
-            return {
-      	        user: entry.user?.username || entry.user?.email || "Unknown",
-      	        userId: entry.user?.id,
-    	        taskId: taskId,
-    	        taskName: entry.task?.name || details?.taskName || "Unknown Task",
-    	        taskUrl: entry.task?.url || details?.taskUrl,
-    	        listId: details?.listId,
-    	        startTime: Number(entry.start),
-    	        duration: Number(entry.duration),
-    	        status: entry.duration > 0 ? "stopped" : "running",
-    	        start_date: entry.start,
- 
-  	            isFake: fakeCheck.isFake,
-  	            isReal: fakeCheck.isReal,
-  	            source: fakeCheck.source,
-    	    };
-  	    }).filter(t => t.listId);
+            try {
+                const timeRes = await fetch(apiUrl, {
+                    headers: { Authorization: `Bearer ${token}` }
+                });
+                const timeData = await timeRes.json();
 
-  	    // 4. Data ko listId se filter karen (jo frontend ne bheja tha)
-  	    const filteredByList = rawTimers.filter(timer => String(timer.listId) === String(listId));
+                if (timeRes.ok && Array.isArray(timeData.data)) {
+                    allTimeEntries.push(...timeData.data);
+                    console.log(`Fetched ${timeData.data.length} entries for user ${member.user.username}`);
+                }
+            } catch (err) {
+                console.error(`Error fetching entries for user ${userId}:`, err.message);
+            }
+        }
 
-  	    console.log(`Total raw entries fetched: ${timeData.data.length}. Filtered for target list ${listId}: ${filteredByList.length}`);
+        console.log(`Total time entries fetched: ${allTimeEntries.length}`);
 
-  	    const mergedTimers = mergeTimers(filteredByList);
-  	    return NextResponse.json({ data: mergedTimers });
+        const taskIds = allTimeEntries.map(entry => entry.task?.id).filter(id => id);
+        const taskDetailsMap = await fetchTaskDetails(taskIds, token);
 
-  	} catch (err) {
-  	    console.error("Error fetching tasks/timers:", err);
-  	    return NextResponse.json({ error: err.message }, { status: 500 });
-  	}
+        const rawTimers = allTimeEntries.map(entry => {
+            const fakeCheck = detectFakeTime(entry);
+            const taskId = entry.task?.id;
+            const details = taskId ? taskDetailsMap.get(taskId) : {};
+
+            return {
+                user: entry.user?.username || entry.user?.email || "Unknown",
+                userId: entry.user?.id,
+                taskId: taskId,
+                taskName: entry.task?.name || details?.taskName || "Unknown Task",
+                taskUrl: entry.task?.url || details?.taskUrl,
+                listId: details?.listId,
+                startTime: Number(entry.start),
+                duration: Number(entry.duration),
+                status: entry.duration > 0 ? "stopped" : "running",
+                start_date: entry.start,
+                isFake: fakeCheck.isFake,
+                isReal: fakeCheck.isReal,
+                source: fakeCheck.source,
+            };
+        }).filter(t => t.listId);
+
+        const filteredByList = rawTimers.filter(timer => String(timer.listId) === String(listId));
+        console.log(`Filtered for list ${listId}: ${filteredByList.length} entries`);
+
+        const mergedTimers = mergeTimers(filteredByList);
+        return NextResponse.json({ data: mergedTimers });
+
+    } catch (err) {
+        console.error("Error fetching tasks/timers:", err);
+        return NextResponse.json({ error: err.message }, { status: 500 });
+    }
 }
