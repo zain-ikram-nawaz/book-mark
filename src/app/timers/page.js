@@ -152,6 +152,8 @@ export default function ListTimerApp() {
     const [timers, setTimers] = useState([]);
     const [filteredTimers, setFilteredTimers] = useState([]);
     const [apiStatus, setApiStatus] = useState({ loading: false, error: null });
+const [onlineStatus, setOnlineStatus] = useState([]);
+
 
     const [selectedSpaceId, setSelectedSpaceId] = useState('');
     const [selectedFolderId, setSelectedFolderId] = useState('');
@@ -217,6 +219,7 @@ export default function ListTimerApp() {
 
             if (ok) {
                 setFolders(data.data || []);
+
                 // If there are folders, select the first one. If not, proceed to lists using spaceId (ungrouped lists)
                 if (data.data && data.data.length > 0) {
                     setSelectedFolderId(data.data[0].id);
@@ -269,13 +272,14 @@ export default function ListTimerApp() {
             return;
         }
 
-        console.log(`🔍 Fetching time entries for list: ${listId}`);
+        // console.log(`🔍 Fetching time entries for list: ${listId}`);
         setApiStatus({ loading: true, error: null });
 
         const { ok, data, error } = await authorizedFetch(`/api/tasks?listId=${listId}`);
 
         if (ok) {
             setTimers(data.data || []);
+        //    setOnlineStatus(data.onlineStatus || []);
             console.log(`✅ Loaded ${data.data?.length || 0} time entries for list ${listId}`);
 
             // Log debug info if available
@@ -322,7 +326,6 @@ export default function ListTimerApp() {
         return `${startDate.toLocaleDateString()} - ${endDate.toLocaleDateString()}`;
     };
 
-    // --- RENDERING ---
 
     if (loading) {
         return (
@@ -580,6 +583,42 @@ export default function ListTimerApp() {
                     </tbody>
                 </table>
             </div>
+            {/* <div className="mt-6 bg-white rounded-xl shadow-lg p-4">
+  <h2 className="text-xl font-semibold mb-4">User Online/Offline Status</h2>
+  {onlineStatus.length === 0 ? (
+    <p className="text-gray-500">No online/offline data available.</p>
+  ) : (
+    <table className="min-w-full divide-y divide-gray-200">
+      <thead>
+        <tr>
+          <th>User</th>
+          <th>Date</th>
+          <th>First Online</th>
+          <th>Last Offline</th>
+          <th>Online Hours</th>
+          <th>Breaks</th>
+        </tr>
+      </thead>
+      <tbody>
+        {onlineStatus.map((user, idx) => (
+          <tr key={idx} className="hover:bg-gray-50">
+            <td>{user.user}</td>
+            <td>{user.date}</td>
+            <td>{user.firstOnlineFormatted}</td>
+            <td>{user.lastOfflineFormatted}</td>
+            <td>{user.totalOnlineHours}h</td>
+            <td>
+              {user.breaks.length > 0
+                ? user.breaks.map((b, i) => `${b.durationMinutes}m`).join(", ")
+                : "None"}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  )}
+</div> */}
+
         </div>
     );
 }
