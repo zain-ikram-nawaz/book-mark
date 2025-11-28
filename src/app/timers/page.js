@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { RefreshCw, LogOut, Clock, Layers, Folder, List, User, TrendingUp, AlertTriangle, Calendar, Activity, Play, Zap, MapPin, Tag, ExternalLink } from 'lucide-react';
+import { RefreshCw, LogOut, Clock, Layers, Folder, List, User, TrendingUp, AlertTriangle, Calendar, Activity, Play, Zap, MapPin, Tag, ExternalLink, Link } from 'lucide-react';
 
 const CLICKUP_CLIENT_ID = process.env.NEXT_PUBLIC_CLICKUP_CLIENT_ID;
 const REDIRECT_URI = process.env.NEXT_PUBLIC_CLICKUP_REDIRECT_URI;
@@ -392,46 +392,65 @@ export default function ListTimerApp() {
     return (
         <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 p-4 md:p-8 font-sans">
             {/* Header */}
-            <header className="mb-8 pb-6 border-b-2 border-indigo-100">
-                <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
-                    <div>
-                        <h1 className="text-4xl font-bold text-gray-800 flex items-center gap-3 mb-2">
-                            <div className="p-2 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl shadow-lg">
-                                <Clock className="w-8 h-8 text-white" />
-                            </div>
-                            ClickUp Time Dashboard
-                        </h1>
-                        <p className="text-gray-600 ml-16">Real-time tracking and analytics</p>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-3">
-                        <label className="flex items-center gap-2 px-4 py-2 bg-white rounded-xl shadow-md text-sm text-gray-700 cursor-pointer hover:shadow-lg transition-shadow">
-                            <input
-                                type="checkbox"
-                                checked={autoRefresh}
-                                onChange={(e) => setAutoRefresh(e.target.checked)}
-                                className="w-4 h-4 text-indigo-600 rounded focus:ring-2 focus:ring-indigo-500"
-                            />
-                            <Zap className="w-4 h-4 text-yellow-500" />
-                            <span className="font-medium">Auto-refresh (10s)</span>
-                        </label>
-                        <button
-                            onClick={handleManualRefresh}
-                            disabled={apiStatus.loading}
-                            className="flex items-center gap-2 px-5 py-2 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-xl shadow-lg hover:shadow-xl hover:scale-105 transition-all duration-200 text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
-                        >
-                            <RefreshCw className={`w-4 h-4 ${apiStatus.loading ? 'animate-spin' : ''}`} />
-                            Refresh
-                        </button>
-                        <button
-                            onClick={logout}
-                            className="flex items-center gap-2 px-5 py-2 bg-white text-gray-700 rounded-xl shadow-md hover:shadow-lg hover:bg-gray-50 transition-all duration-200 text-sm font-semibold"
-                        >
-                            <LogOut className="w-4 h-4" />
-                            Logout
-                        </button>
-                    </div>
-                </div>
-            </header>
+     <header className="mb-8 pb-6 border-b-2 border-indigo-100">
+  <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
+    <div>
+      <h1 className="text-4xl font-bold text-gray-800 flex items-center gap-3 mb-2">
+        <div className="p-2 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl shadow-lg">
+          <Clock className="w-8 h-8 text-white" />
+        </div>
+        ClickUp Time Dashboard
+      </h1>
+      <p className="text-gray-600 ml-16">Real-time tracking and analytics</p>
+    </div>
+
+    <div className="flex flex-wrap items-center gap-3">
+
+      {/* Auto Refresh */}
+      <label className="flex items-center gap-2 px-4 py-2 bg-white rounded-xl shadow-md text-sm text-gray-700 cursor-pointer hover:shadow-lg transition-shadow">
+        <input
+          type="checkbox"
+          checked={autoRefresh}
+          onChange={(e) => setAutoRefresh(e.target.checked)}
+          className="w-4 h-4 text-indigo-600 rounded focus:ring-2 focus:ring-indigo-500"
+        />
+        <Zap className="w-4 h-4 text-yellow-500" />
+        <span className="font-medium">Auto-refresh (10s)</span>
+      </label>
+
+      {/* Refresh Button */}
+      <button
+        onClick={handleManualRefresh}
+        disabled={apiStatus.loading}
+        className="flex items-center gap-2 px-5 py-2 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-xl shadow-lg hover:shadow-xl hover:scale-105 transition-all duration-200 text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+      >
+        <RefreshCw className={`w-4 h-4 ${apiStatus.loading ? 'animate-spin' : ''}`} />
+        Refresh
+      </button>
+
+      {/* Logout Button */}
+      <button
+        onClick={logout}
+        className="flex items-center gap-2 px-5 py-2 bg-white text-gray-700 rounded-xl shadow-md hover:shadow-lg hover:bg-gray-50 transition-all duration-200 text-sm font-semibold"
+      >
+        <LogOut className="w-4 h-4" />
+        Logout
+      </button>
+
+      {/* Attendence Button */}
+      <Link href="/attendence">
+        <button
+          className="flex items-center gap-2 px-5 py-2 bg-white text-gray-700 rounded-xl shadow-md hover:shadow-lg hover:bg-gray-50 transition-all duration-200 text-sm font-semibold"
+        >
+          <Calendar className="w-4 h-4" />
+          Attendence
+        </button>
+      </Link>
+
+    </div>
+  </div>
+</header>
+
 
             {/* Filters */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8 bg-white p-6 rounded-2xl shadow-lg border border-gray-100">
