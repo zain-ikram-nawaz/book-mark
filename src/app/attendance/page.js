@@ -4,36 +4,72 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { RefreshCw, LogOut, Clock, Users, Calendar, TrendingUp, Coffee } from 'lucide-react';
 
 const ACCESS_TOKEN_KEY = 'clickup_access_token';
-// Set the target US Timezone here (e.g., 'America/New_York' for EST/EDT, 'America/Los_Angeles' for PST/PDT)
-const US_TIMEZONE = 'America/New_York';
+// Pacific Time (PST/PDT)
+const PACIFIC_TIMEZONE = 'America/Los_Angeles';
+// Pakistan Time (PKT)
+const PAKISTAN_TIMEZONE = 'Asia/Karachi';
 
-// Helper to format time (Original local time)
-const formatTime = (timestamp) => {
-  return new Date(timestamp).toLocaleTimeString('en-US', {
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: true
-  });
+// Helper to get user's local timezone
+const getUserLocalTimezone = () => {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone;
 };
 
-// NEW: Helper to convert specific date/time string to US Time
-const getUSTime = (dateString, timeString) => {
+// Helper to format time in user's local timezone
+const getLocalTime = (dateString, timeString) => {
   if (!dateString || !timeString) return null;
 
   try {
-    // Combine date and time to create a Date object
-    // We assume dateString is YYYY-MM-DD and timeString is HH:MM AM/PM
     const dateTime = new Date(`${dateString} ${timeString}`);
+    if (isNaN(dateTime.getTime())) return null;
 
-    // Check if date is valid
+    const userTimezone = getUserLocalTimezone();
+
+    return dateTime.toLocaleTimeString('en-US', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
+      timeZone: userTimezone,
+      timeZoneName: 'short'
+    });
+  } catch (err) {
+    return null;
+  }
+};
+
+// Helper to convert specific date/time string to Pacific Time
+const getPacificTime = (dateString, timeString) => {
+  if (!dateString || !timeString) return null;
+
+  try {
+    const dateTime = new Date(`${dateString} ${timeString}`);
     if (isNaN(dateTime.getTime())) return null;
 
     return dateTime.toLocaleTimeString('en-US', {
       hour: '2-digit',
       minute: '2-digit',
       hour12: true,
-      timeZone: US_TIMEZONE,
-      timeZoneName: 'short' // This adds 'EST' or 'EDT'
+      timeZone: PACIFIC_TIMEZONE,
+      timeZoneName: 'short'
+    });
+  } catch (err) {
+    return null;
+  }
+};
+
+// Helper to convert specific date/time string to Pakistan Time
+const getPakistanTime = (dateString, timeString) => {
+  if (!dateString || !timeString) return null;
+
+  try {
+    const dateTime = new Date(`${dateString} ${timeString}`);
+    if (isNaN(dateTime.getTime())) return null;
+
+    return dateTime.toLocaleTimeString('en-US', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
+      timeZone: PAKISTAN_TIMEZONE,
+      timeZoneName: 'short'
     });
   } catch (err) {
     return null;
@@ -42,11 +78,14 @@ const getUSTime = (dateString, timeString) => {
 
 // Helper to format date
 const formatDate = (dateString) => {
+  const userTimezone = getUserLocalTimezone();
+
   return new Date(dateString).toLocaleDateString('en-US', {
     weekday: 'short',
     month: 'short',
     day: 'numeric',
-    year: 'numeric'
+    year: 'numeric',
+    timeZone: userTimezone
   });
 };
 
@@ -111,17 +150,22 @@ export default function TeamAttendancePage() {
   const [dateFilter, setDateFilter] = useState('today');
   const [selectedUser, setSelectedUser] = useState('all');
   const [expandedRows, setExpandedRows] = useState(new Set());
+  const [showPakistanTime, setShowPakistanTime] = useState(false); // New state for toggling timezone
+  const [userTimezone, setUserTimezone] = useState(''); // Store user's timezone
 
-  // Get token from localStorage
+  // Get token from localStorage and user's timezone
   useEffect(() => {
     const storedToken = localStorage.getItem(ACCESS_TOKEN_KEY);
     if (storedToken) {
       setToken(storedToken);
-      setLoading(false);
     } else {
       setError("No authentication token found. Please login first.");
-      setLoading(false);
     }
+
+    // Get user's local timezone
+    const tz = getUserLocalTimezone();
+    setUserTimezone(tz);
+    setLoading(false);
   }, []);
 
   // Fetch attendance data
@@ -231,11 +275,6 @@ export default function TeamAttendancePage() {
 
   return (
     <div className="min-h-screen bg-gray-100 p-4 md:p-8 font-sans">
-      <script src="https://cdn.tailwindcss.com"></script>
-      <style jsx global>{`
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
-        body { font-family: 'Inter', sans-serif; }
-      `}</style>
 
       {/* Header */}
       <header className="flex justify-between items-center mb-8 pb-4 border-b border-gray-200">
@@ -244,6 +283,7 @@ export default function TeamAttendancePage() {
           Team Attendance Dashboard
         </h1>
         <div className="flex gap-3">
+        
           <button
             onClick={fetchAttendance}
             disabled={loading}
@@ -261,6 +301,7 @@ export default function TeamAttendancePage() {
           </button>
         </div>
       </header>
+
 
       {/* Stats Cards */}
       {stats && (
@@ -370,6 +411,12 @@ export default function TeamAttendancePage() {
               User: {uniqueUsers.find(u => u.id === parseInt(selectedUser))?.name || selectedUser}
             </span>
           )}
+          <span className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm">
+            Your Timezone: {userTimezone}
+          </span>
+          <span className="px-3 py-1 bg-amber-100 text-amber-800 rounded-full text-sm">
+            Converted To: {showPakistanTime ? 'PKT' : 'PST'}
+          </span>
         </div>
       </div>
 
@@ -423,16 +470,16 @@ export default function TeamAttendancePage() {
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-green-600 font-semibold">
                           <div>🟢 {record.firstCheckIn}</div>
-                          {/* Main Table US Time */}
+                          {/* UPAR WALA TIME: User ka local time */}
                           <div className="text-xs text-gray-400 font-normal">
-                             {getUSTime(record.date, record.firstCheckIn)}
+                            {getLocalTime(record.date, record.firstCheckIn)}
                           </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-red-600 font-semibold">
                           <div>🔴 {record.lastCheckOut}</div>
-                           {/* Main Table US Time */}
-                           <div className="text-xs text-gray-400 font-normal">
-                             {getUSTime(record.date, record.lastCheckOut)}
+                          {/* UPAR WALA TIME: User ka local time */}
+                          <div className="text-xs text-gray-400 font-normal">
+                            {getLocalTime(record.date, record.lastCheckOut)}
                           </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-semibold">
@@ -467,27 +514,43 @@ export default function TeamAttendancePage() {
                                 <h4 className="font-semibold text-gray-700 mb-2 flex items-center">
                                   <Clock className="w-4 h-4 mr-2" />
                                   Session Timeline
+                                  <span className="ml-2 text-xs font-normal text-gray-500">
+                                    (Local: {userTimezone} | Converted: {showPakistanTime ? 'PKT' : 'PST'})
+                                  </span>
                                 </h4>
                                 <div className="space-y-2">
                                   {record.timeline && record.timeline.map((session, idx) => (
                                     <div key={`${record.uniqueId}_session_${idx}`} className="flex flex-col md:flex-row md:items-center text-sm bg-white p-3 rounded-lg shadow-sm">
                                       <span className="font-medium text-indigo-600 mr-3 mb-1 md:mb-0">Session {session.sessionNumber}:</span>
 
-                                      {/* Session Start Time with US Time */}
+                                      {/* Session Start Time */}
                                       <span className="text-green-600 mr-1">🟢 {session.checkIn}</span>
+                                      {/* UPAR WALA TIME: Local time */}
                                       <span className="text-xs text-gray-500 mr-2 bg-gray-100 px-1 rounded">
-                                         {getUSTime(record.date, session.checkIn)}
+                                        {getLocalTime(record.date, session.checkIn)}
                                       </span>
 
                                       <span className="text-gray-400 mr-2 hidden md:inline">→</span>
 
-                                      {/* Session End Time with US Time */}
+                                      {/* Session End Time */}
                                       <span className="text-red-600 mr-1 md:ml-0 ml-1">🔴 {session.checkOut}</span>
+                                      {/* UPAR WALA TIME: Local time */}
                                       <span className="text-xs text-gray-500 mr-3 bg-gray-100 px-1 rounded">
-                                         {getUSTime(record.date, session.checkOut)}
+                                        {getLocalTime(record.date, session.checkOut)}
                                       </span>
 
                                       <span className="text-gray-600">({session.durationMinutes} min)</span>
+
+                                      {/* NEEHCHE WALA TIME: Converted time */}
+                                      <div className="ml-3 text-xs text-blue-600">
+                                        <div>
+                                          {showPakistanTime
+                                            ? `PKT: ${getPakistanTime(record.date, session.checkIn)} → ${getPakistanTime(record.date, session.checkOut)}`
+                                            : `PST: ${getPacificTime(record.date, session.checkIn)} → ${getPacificTime(record.date, session.checkOut)}`
+                                          }
+                                        </div>
+                                      </div>
+
                                       {session.nextBreak && (
                                         <span className="ml-3 text-amber-600">☕ {session.nextBreak} break</span>
                                       )}
@@ -502,6 +565,9 @@ export default function TeamAttendancePage() {
                                   <h4 className="font-semibold text-gray-700 mb-2 flex items-center">
                                     <Coffee className="w-4 h-4 mr-2" />
                                     Break Details
+                                    <span className="ml-2 text-xs font-normal text-gray-500">
+                                      (Local: {userTimezone} | Converted: {showPakistanTime ? 'PKT' : 'PST'})
+                                    </span>
                                   </h4>
                                   <div className="space-y-2">
                                     {record.breaks.map((brk, idx) => (
@@ -509,15 +575,26 @@ export default function TeamAttendancePage() {
                                         <span className="font-medium text-amber-600 mr-3 mb-1 md:mb-0">Break {idx + 1}:</span>
 
                                         <span className="text-gray-600">
-                                            {brk.startTime}
-                                            <span className="text-xs text-gray-500 ml-1 bg-gray-100 px-1 rounded">
-                                                {getUSTime(record.date, brk.startTime)}
-                                            </span>
-                                            <span className="mx-2">→</span>
-                                            {brk.endTime}
-                                            <span className="text-xs text-gray-500 ml-1 bg-gray-100 px-1 rounded">
-                                                {getUSTime(record.date, brk.endTime)}
-                                            </span>
+                                            {/* UPAR WALA TIME: Local time */}
+                                            <div className="mb-1">
+                                              {brk.startTime}
+                                              <span className="text-xs text-gray-500 ml-1 bg-gray-100 px-1 rounded">
+                                                  {getLocalTime(record.date, brk.startTime)}
+                                              </span>
+                                              <span className="mx-2">→</span>
+                                              {brk.endTime}
+                                              <span className="text-xs text-gray-500 ml-1 bg-gray-100 px-1 rounded">
+                                                  {getLocalTime(record.date, brk.endTime)}
+                                              </span>
+                                            </div>
+
+                                            {/* NEEHCHE WALA TIME: Converted time */}
+                                            <div className="text-xs text-blue-600 mt-1">
+                                              {showPakistanTime
+                                                ? `PKT: ${getPakistanTime(record.date, brk.startTime)} → ${getPakistanTime(record.date, brk.endTime)}`
+                                                : `PST: ${getPacificTime(record.date, brk.startTime)} → ${getPacificTime(record.date, brk.endTime)}`
+                                              }
+                                            </div>
                                         </span>
 
                                         <span className="ml-3 text-gray-600">({brk.durationMinutes} minutes)</span>
@@ -545,6 +622,7 @@ export default function TeamAttendancePage() {
           Showing {filteredAttendance.length} record{filteredAttendance.length !== 1 ? 's' : ''}
           {selectedUser !== 'all' && ` for ${uniqueUsers.find(u => u.id === parseInt(selectedUser))?.name || selectedUser}`}
           {dateFilter !== 'today' && ` (${dateFilter})`}
+          {` | Local: ${userTimezone} → ${showPakistanTime ? 'PKT' : 'PST'}`}
         </div>
       )}
     </div>
