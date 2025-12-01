@@ -5,6 +5,37 @@ import { RefreshCw, LogOut, Clock, Users, Calendar, TrendingUp, Coffee } from 'l
 
 const ACCESS_TOKEN_KEY = 'clickup_access_token';
 
+// Helper to get user's local timezone
+const getUserLocalTimezone = () => {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone;
+};
+
+// Helper to convert timestamp to local time
+const formatTimestampToLocal = (timestamp) => {
+  if (!timestamp) return null;
+
+  const userTimezone = getUserLocalTimezone();
+
+  return new Date(timestamp).toLocaleTimeString('en-US', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+    timeZone: userTimezone
+  });
+};
+
+// Helper to convert timestamp to UTC
+const formatTimestampToUTC = (timestamp) => {
+  if (!timestamp) return null;
+
+  return new Date(timestamp).toLocaleTimeString('en-US', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+    timeZone: 'UTC'
+  });
+};
+
 // Helper to format date
 const formatDate = (dateString) => {
   return new Date(dateString).toLocaleDateString('en-US', {
@@ -76,8 +107,9 @@ export default function TeamAttendancePage() {
   const [dateFilter, setDateFilter] = useState('today');
   const [selectedUser, setSelectedUser] = useState('all');
   const [expandedRows, setExpandedRows] = useState(new Set());
+  const [userTimezone, setUserTimezone] = useState('');
 
-  // Get token from localStorage
+  // Get token from localStorage and user's timezone
   useEffect(() => {
     const storedToken = localStorage.getItem(ACCESS_TOKEN_KEY);
     if (storedToken) {
@@ -85,6 +117,9 @@ export default function TeamAttendancePage() {
     } else {
       setError("No authentication token found. Please login first.");
     }
+
+    const tz = getUserLocalTimezone();
+    setUserTimezone(tz);
     setLoading(false);
   }, []);
 
@@ -328,6 +363,9 @@ export default function TeamAttendancePage() {
               User: {uniqueUsers.find(u => u.id === parseInt(selectedUser))?.name || selectedUser}
             </span>
           )}
+          <span className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm">
+            Your Timezone: {userTimezone}
+          </span>
         </div>
       </div>
 
@@ -374,16 +412,26 @@ export default function TeamAttendancePage() {
                     <React.Fragment key={record.uniqueId}>
                       <tr className="hover:bg-gray-50 transition">
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                          {formatDate(record.date)}
+                          {record.dateFormatted || formatDate(record.date)}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                           {record.user}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-green-600 font-semibold">
-                          🟢 {record.firstCheckIn}
+                          {/* UPAR: Local Time */}
+                          <div>🟢 {formatTimestampToLocal(record.firstCheckInTimestamp)}</div>
+                          {/* NEECHE: UTC Time */}
+                          <div className="text-xs text-gray-500 font-normal">
+                            UTC: {formatTimestampToUTC(record.firstCheckInTimestamp)}
+                          </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-red-600 font-semibold">
-                          🔴 {record.lastCheckOut}
+                          {/* UPAR: Local Time */}
+                          <div>🔴 {formatTimestampToLocal(record.lastCheckOutTimestamp)}</div>
+                          {/* NEECHE: UTC Time */}
+                          <div className="text-xs text-gray-500 font-normal">
+                            UTC: {formatTimestampToUTC(record.lastCheckOutTimestamp)}
+                          </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-semibold">
                           {record.totalActiveHours}h
@@ -417,20 +465,40 @@ export default function TeamAttendancePage() {
                                 <h4 className="font-semibold text-gray-700 mb-2 flex items-center">
                                   <Clock className="w-4 h-4 mr-2" />
                                   Session Timeline
+                                  <span className="ml-2 text-xs font-normal text-gray-500">
+                                    (Your Time: {userTimezone})
+                                  </span>
                                 </h4>
                                 <div className="space-y-2">
-                                  {record.timeline && record.timeline.map((session, idx) => (
-                                    <div key={`${record.uniqueId}_session_${idx}`} className="flex flex-wrap items-center text-sm bg-white p-3 rounded-lg shadow-sm">
-                                      <span className="font-medium text-indigo-600 mr-3">Session {session.sessionNumber}:</span>
-                                      <span className="text-green-600 mr-2">🟢 {session.checkIn}</span>
-                                      <span className="text-gray-400 mr-2">→</span>
-                                      <span className="text-red-600 mr-3">🔴 {session.checkOut}</span>
-                                      <span className="text-gray-600 mr-3">({session.durationMinutes} min)</span>
-                                      {session.nextBreak && (
-                                        <span className="text-amber-600">☕ {session.nextBreak} break</span>
-                                      )}
-                                    </div>
-                                  ))}
+                                  {record.timeline && record.timeline.map((session, idx) => {
+                                    // Timeline me timestamps nahi hain, toh date + time se timestamp banate hain
+                                    const checkInTime = new Date(`${record.date} ${session.checkIn}`).getTime();
+                                    const checkOutTime = new Date(`${record.date} ${session.checkOut}`).getTime();
+
+                                    return (
+                                      <div key={`${record.uniqueId}_session_${idx}`} className="flex flex-col text-sm bg-white p-3 rounded-lg shadow-sm">
+                                        <div className="flex items-center mb-2">
+                                          <span className="font-medium text-indigo-600 mr-3">Session {session.sessionNumber}:</span>
+                                          <span className="text-gray-600">({session.durationMinutes} min)</span>
+                                          {session.nextBreak && (
+                                            <span className="ml-3 text-amber-600">☕ {session.nextBreak} break</span>
+                                          )}
+                                        </div>
+
+                                        {/* UPAR: Local Time */}
+                                        <div className="mb-1">
+                                          <span className="text-green-600 mr-2">🟢 {formatTimestampToLocal(checkInTime)}</span>
+                                          <span className="text-gray-400 mx-2">→</span>
+                                          <span className="text-red-600">🔴 {formatTimestampToLocal(checkOutTime)}</span>
+                                        </div>
+
+                                        {/* NEECHE: UTC Time */}
+                                        <div className="text-xs text-gray-500">
+                                          UTC: {formatTimestampToUTC(checkInTime)} → {formatTimestampToUTC(checkOutTime)}
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
                                 </div>
                               </div>
 
@@ -440,17 +508,36 @@ export default function TeamAttendancePage() {
                                   <h4 className="font-semibold text-gray-700 mb-2 flex items-center">
                                     <Coffee className="w-4 h-4 mr-2" />
                                     Break Details
+                                    <span className="ml-2 text-xs font-normal text-gray-500">
+                                      (Your Time: {userTimezone})
+                                    </span>
                                   </h4>
                                   <div className="space-y-2">
-                                    {record.breaks.map((brk, idx) => (
-                                      <div key={`${record.uniqueId}_break_${idx}`} className="flex flex-wrap items-center text-sm bg-white p-3 rounded-lg shadow-sm">
-                                        <span className="font-medium text-amber-600 mr-3">Break {idx + 1}:</span>
-                                        <span className="text-gray-600 mr-2">{brk.startTime}</span>
-                                        <span className="text-gray-400 mr-2">→</span>
-                                        <span className="text-gray-600 mr-3">{brk.endTime}</span>
-                                        <span className="text-gray-600">({brk.durationMinutes} minutes)</span>
-                                      </div>
-                                    ))}
+                                    {record.breaks.map((brk, idx) => {
+                                      const breakStartTime = new Date(`${record.date} ${brk.startTime}`).getTime();
+                                      const breakEndTime = new Date(`${record.date} ${brk.endTime}`).getTime();
+
+                                      return (
+                                        <div key={`${record.uniqueId}_break_${idx}`} className="flex flex-col text-sm bg-white p-3 rounded-lg shadow-sm">
+                                          <div className="flex items-center mb-2">
+                                            <span className="font-medium text-amber-600 mr-3">Break {idx + 1}:</span>
+                                            <span className="text-gray-600">({brk.durationMinutes} minutes)</span>
+                                          </div>
+
+                                          {/* UPAR: Local Time */}
+                                          <div className="mb-1">
+                                            <span className="text-gray-700">{formatTimestampToLocal(breakStartTime)}</span>
+                                            <span className="mx-2">→</span>
+                                            <span className="text-gray-700">{formatTimestampToLocal(breakEndTime)}</span>
+                                          </div>
+
+                                          {/* NEECHE: UTC Time */}
+                                          <div className="text-xs text-gray-500">
+                                            UTC: {formatTimestampToUTC(breakStartTime)} → {formatTimestampToUTC(breakEndTime)}
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
                                   </div>
                                 </div>
                               )}
