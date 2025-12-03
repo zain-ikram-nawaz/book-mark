@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { RefreshCw, LogOut, Clock, Users, Calendar, TrendingUp, Coffee } from 'lucide-react';
+import Link from 'next/link';
+import { RefreshCw, LogOut, Clock, Users, Calendar,Activity, TrendingUp, Coffee, X, User } from 'lucide-react';
 
 const ACCESS_TOKEN_KEY = 'clickup_access_token';
 
@@ -105,7 +106,7 @@ export default function TeamAttendancePage() {
   const [stats, setStats] = useState(null);
   const [error, setError] = useState(null);
   const [dateFilter, setDateFilter] = useState('today');
-  const [selectedUser, setSelectedUser] = useState('all');
+  const [selectedUsers, setSelectedUsers] = useState([]); // ✅ Changed to array
   const [expandedRows, setExpandedRows] = useState(new Set());
   const [userTimezone, setUserTimezone] = useState('');
 
@@ -171,10 +172,10 @@ export default function TeamAttendancePage() {
     }
   }, [token, dateFilter, fetchAttendance]);
 
-  // Filter data by user
+  // ✅ Filter data by multiple users
   const filteredAttendance = attendance.filter(record => {
-    if (selectedUser !== 'all') {
-      return record.userId === parseInt(selectedUser) || record.user === selectedUser;
+    if (selectedUsers.length > 0) {
+      return selectedUsers.includes(record.userId);
     }
     return true;
   });
@@ -184,6 +185,22 @@ export default function TeamAttendancePage() {
     id: a.userId,
     name: a.user
   }])).values()].sort((a, b) => a.name.localeCompare(b.name));
+
+  // ✅ Toggle user selection
+  const toggleUserSelection = (userId) => {
+    setSelectedUsers(prev => {
+      if (prev.includes(userId)) {
+        return prev.filter(id => id !== userId);
+      } else {
+        return [...prev, userId];
+      }
+    });
+  };
+
+  // ✅ Clear all user filters
+  const clearUserFilters = () => {
+    setSelectedUsers([]);
+  };
 
   // Toggle row expansion
   const toggleRow = (key) => {
@@ -245,6 +262,19 @@ export default function TeamAttendancePage() {
             <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
             Refresh
           </button>
+           <Link href="/">
+              <button className="flex items-center gap-2 px-5 py-2 bg-white text-gray-700 rounded-xl shadow-md hover:shadow-lg transition-all text-sm font-semibold">
+                <Calendar className="w-4 h-4" />
+                Tract Time
+              </button>
+            </Link>
+
+            <Link href="/running-timers">
+              <button className="flex items-center gap-2 px-5 py-2 bg-white text-gray-700 rounded-xl shadow-md hover:shadow-lg transition-all text-sm font-semibold">
+                <Activity className="w-4 h-4" />
+                Running Timers
+              </button>
+            </Link>
           <button
             onClick={logout}
             className="flex items-center px-4 py-2 bg-gray-200 text-gray-700 rounded-lg shadow-md hover:bg-gray-300 transition duration-150 text-sm"
@@ -322,47 +352,75 @@ export default function TeamAttendancePage() {
           ))}
         </div>
 
-        {/* User Filter */}
+        {/* ✅ Multi-Select User Filter */}
         <div className="flex flex-col md:flex-row gap-4">
           <div className="flex-1">
-            <label className="text-sm font-medium text-gray-600 mb-1 block">Filter by User</label>
-            <select
-              value={selectedUser}
-              onChange={(e) => setSelectedUser(e.target.value)}
-              className="w-full p-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
-            >
-              <option value="all">All Users ({uniqueUsers.length})</option>
-              {uniqueUsers.map(user => (
-                <option key={user.id} value={user.id}>{user.name}</option>
-              ))}
-            </select>
+            <label className="text-sm font-medium text-gray-600 mb-2 flex items-center justify-between">
+              <span className="flex items-center gap-2">
+                <Users className="w-4 h-4 text-indigo-500" />
+                Filter by Users ({selectedUsers.length > 0 ? selectedUsers.length : 'All'})
+              </span>
+              {selectedUsers.length > 0 && (
+                <button
+                  onClick={clearUserFilters}
+                  className="text-xs text-red-600 hover:text-red-800 flex items-center gap-1"
+                >
+                  <X className="w-3 h-3" />
+                  Clear
+                </button>
+              )}
+            </label>
+            <div className="border-2 border-gray-200 rounded-lg p-3 bg-gray-50 max-h-48 overflow-y-auto">
+              {uniqueUsers.length === 0 ? (
+                <p className="text-sm text-gray-500">No users available</p>
+              ) : (
+                uniqueUsers.map(user => (
+                  <label key={user.id} className="flex items-center gap-2 py-2 hover:bg-white px-2 rounded cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={selectedUsers.includes(user.id)}
+                      onChange={() => toggleUserSelection(user.id)}
+                      className="w-4 h-4 text-indigo-600 rounded focus:ring-2 focus:ring-indigo-500"
+                    />
+                    <span className="text-sm text-gray-700">{user.name}</span>
+                  </label>
+                ))
+              )}
+            </div>
           </div>
 
           <div className="flex items-end">
             <button
               onClick={() => {
                 setDateFilter('today');
-                setSelectedUser('all');
+                setSelectedUsers([]);
               }}
               className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition duration-150"
             >
-              Reset Filters
+              Reset All Filters
             </button>
           </div>
         </div>
 
-        {/* Active Filters Display */}
-        <div className="mt-3 flex flex-wrap gap-2">
+        {/* ✅ Active Filters Display */}
+        <div className="mt-4 flex flex-wrap gap-2">
           {dateFilter !== 'today' && (
-            <span className="px-3 py-1 bg-indigo-100 text-indigo-800 rounded-full text-sm">
+            <span className="px-3 py-1 bg-indigo-100 text-indigo-700 rounded-full text-sm font-medium">
               Date: {dateFilter}
             </span>
           )}
-          {selectedUser !== 'all' && (
-            <span className="px-3 py-1 bg-green-100 text-green-800 rounded-full text-sm">
-              User: {uniqueUsers.find(u => u.id === parseInt(selectedUser))?.name || selectedUser}
-            </span>
-          )}
+          {selectedUsers.map(userId => {
+            const user = uniqueUsers.find(u => u.id === userId);
+            return (
+              <span key={userId} className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm font-medium flex items-center gap-2">
+                <User className="w-3 h-3" />
+                {user?.name}
+                <button onClick={() => toggleUserSelection(userId)} className="hover:bg-green-200 rounded-full p-0.5">
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            );
+          })}
           <span className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm">
             Your Timezone: {userTimezone}
           </span>
@@ -418,17 +476,13 @@ export default function TeamAttendancePage() {
                           {record.user}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-green-600 font-semibold">
-                          {/* UPAR: Local Time */}
                           <div>🟢 {formatTimestampToLocal(record.firstCheckInTimestamp)}</div>
-                          {/* NEECHE: UTC Time */}
                           <div className="text-xs text-gray-500 font-normal">
                             UTC: {formatTimestampToUTC(record.firstCheckInTimestamp)}
                           </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-red-600 font-semibold">
-                          {/* UPAR: Local Time */}
                           <div>🔴 {formatTimestampToLocal(record.lastCheckOutTimestamp)}</div>
-                          {/* NEECHE: UTC Time */}
                           <div className="text-xs text-gray-500 font-normal">
                             UTC: {formatTimestampToUTC(record.lastCheckOutTimestamp)}
                           </div>
@@ -471,7 +525,6 @@ export default function TeamAttendancePage() {
                                 </h4>
                                 <div className="space-y-2">
                                   {record.timeline && record.timeline.map((session, idx) => {
-                                    // Timeline me timestamps nahi hain, toh date + time se timestamp banate hain
                                     const checkInTime = new Date(`${record.date} ${session.checkIn}`).getTime();
                                     const checkOutTime = new Date(`${record.date} ${session.checkOut}`).getTime();
 
@@ -485,14 +538,12 @@ export default function TeamAttendancePage() {
                                           )}
                                         </div>
 
-                                        {/* UPAR: Local Time */}
                                         <div className="mb-1">
                                           <span className="text-green-600 mr-2">🟢 {formatTimestampToLocal(checkInTime)}</span>
                                           <span className="text-gray-400 mx-2">→</span>
                                           <span className="text-red-600">🔴 {formatTimestampToLocal(checkOutTime)}</span>
                                         </div>
 
-                                        {/* NEECHE: UTC Time */}
                                         <div className="text-xs text-gray-500">
                                           UTC: {formatTimestampToUTC(checkInTime)} → {formatTimestampToUTC(checkOutTime)}
                                         </div>
@@ -524,14 +575,12 @@ export default function TeamAttendancePage() {
                                             <span className="text-gray-600">({brk.durationMinutes} minutes)</span>
                                           </div>
 
-                                          {/* UPAR: Local Time */}
                                           <div className="mb-1">
                                             <span className="text-gray-700">{formatTimestampToLocal(breakStartTime)}</span>
                                             <span className="mx-2">→</span>
                                             <span className="text-gray-700">{formatTimestampToLocal(breakEndTime)}</span>
                                           </div>
 
-                                          {/* NEECHE: UTC Time */}
                                           <div className="text-xs text-gray-500">
                                             UTC: {formatTimestampToUTC(breakStartTime)} → {formatTimestampToUTC(breakEndTime)}
                                           </div>
@@ -558,7 +607,7 @@ export default function TeamAttendancePage() {
       {filteredAttendance.length > 0 && (
         <div className="mt-4 text-center text-sm text-gray-600">
           Showing {filteredAttendance.length} record{filteredAttendance.length !== 1 ? 's' : ''}
-          {selectedUser !== 'all' && ` for ${uniqueUsers.find(u => u.id === parseInt(selectedUser))?.name || selectedUser}`}
+          {selectedUsers.length > 0 && ` for ${selectedUsers.length} selected user${selectedUsers.length !== 1 ? 's' : ''}`}
           {dateFilter !== 'today' && ` (${dateFilter})`}
         </div>
       )}

@@ -35,24 +35,22 @@ export async function GET(request) {
         );
 
         const data = await res.json();
-        
-        console.log(`  ⏱️ User ${m.user.username} (${userId}):`, JSON.stringify(data, null, 2));
 
         // Check if this user has a running timer
         if (data.data && !data.data.error) {
           console.log(`  ✅ RUNNING TIMER FOUND for ${m.user.username}!`);
-          
+
           // Fetch task details
           const taskId = data.data.task?.id;
           let taskDetails = null;
-          
+
           if (taskId) {
             try {
               const taskRes = await fetch(
                 `https://api.clickup.com/api/v2/task/${taskId}`,
                 { headers: { Authorization: `Bearer ${token}` } }
               );
-              
+
               if (taskRes.ok) {
                 taskDetails = await taskRes.json();
               }
@@ -64,18 +62,24 @@ export async function GET(request) {
           runningTimers.push({
             user: m.user.username || m.user.email,
             userId: userId,
+            userInitials: m.user.initials || "?",
+            userProfilePicture: m.user.profilePicture || null,
             taskId: taskId,
             taskName: data.data.task?.name || taskDetails?.name || "Unknown Task",
             taskUrl: data.data.task?.url || taskDetails?.url,
             listId: taskDetails?.list?.id,
             listName: taskDetails?.list?.name,
+            folderId: taskDetails?.folder?.id,
+            folderName: taskDetails?.folder?.name || "No Folder",
             startTime: Number(data.data.start),
-            duration: Number(data.data.duration || 0),
+            startFormatted: new Date(Number(data.data.start)).toLocaleString(),
+            startTimeShort: new Date(Number(data.data.start)).toLocaleTimeString(),
             status: "running",
             isRunning: true,
             source: data.data.source || "unknown",
             isFake: (data.data.source || "").toLowerCase() === "clickup",
-            rawData: data.data
+            billable: data.data.billable || false,
+            description: data.data.description || ""
           });
         }
       } catch (err) {
@@ -86,10 +90,16 @@ export async function GET(request) {
     console.log(`🏃 Total running timers found: ${runningTimers.length}`);
 
     return NextResponse.json({
+      success: true,
       runningTimers: runningTimers,
+      stats: {
+        totalRunning: runningTimers.length,
+        activeUsers: runningTimers.length,
+        totalActiveTime: runningTimers.reduce((sum, t) => sum + (Date.now() - t.startTime), 0)
+      },
       meta: {
         totalMembers: members.length,
-        runningCount: runningTimers.length
+        timestamp: new Date().toISOString()
       }
     });
 

@@ -194,9 +194,9 @@ export async function GET(request) {
   const startDateParam = searchParams.get("startDate"); // YYYY-MM-DD
   const endDateParam = searchParams.get("endDate"); // YYYY-MM-DD
 
-  console.log(`\n${'='.repeat(60)}`);
-  console.log(`👥 TEAM ATTENDANCE REQUEST - ${new Date().toISOString()}`);
-  console.log(`${'='.repeat(60)}`);
+  // console.log(`\n${'='.repeat(60)}`);
+  // console.log(`👥 TEAM ATTENDANCE REQUEST - ${new Date().toISOString()}`);
+  // console.log(`${'='.repeat(60)}`);
 
   if (!token) {
     return NextResponse.json(

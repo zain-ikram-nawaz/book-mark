@@ -1,880 +1,698 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { RefreshCw, LogOut, Clock, Layers, Folder, List, User, TrendingUp, AlertTriangle, Calendar, Activity, Play, Zap, MapPin, Tag, ExternalLink, Link } from 'lucide-react';
+import { RefreshCw, LogOut, Clock, User, TrendingUp, AlertTriangle, Calendar, Activity, Zap, ExternalLink, Folder, Users, Filter, X, Search, Smartphone, Monitor } from 'lucide-react';
+import Link from 'next/link';
 
+const ACCESS_TOKEN_KEY = 'clickup_access_token';
 const CLICKUP_CLIENT_ID = process.env.NEXT_PUBLIC_CLICKUP_CLIENT_ID;
 const REDIRECT_URI = process.env.NEXT_PUBLIC_CLICKUP_REDIRECT_URI;
 const OAUTH_SCOPES = 'team:read time_tracking:read task:read list:read space:read user:read';
-const ACCESS_TOKEN_KEY = 'clickup_access_token';
 
-const DATE_FILTER_OPTIONS = [
-    { value: 'today', label: 'Today' },
-    { value: 'yesterday', label: 'Yesterday' },
-    { value: '3days', label: 'Last 3 Days' },
-    { value: '5days', label: 'Last 5 Days' },
-    { value: 'week', label: 'Last Week' },
-    { value: 'month', label: 'Last Month' },
-    { value: 'all', label: 'All Time' }
+const DATE_FILTERS = [
+  { value: 1, label: 'Today', days: 1 },
+  { value: 2, label: 'Yesterday + Today', days: 2 },
+  { value: 3, label: 'Last 3 Days', days: 3 },
+  { value: 7, label: 'Last Week', days: 7 },
+  { value: 30, label: 'Last Month', days: 30 },
 ];
 
 const formatDuration = (ms) => {
-    const totalSeconds = Math.floor(ms / 1000);
-    const hours = Math.floor(totalSeconds / 3600);
-    const minutes = Math.floor((totalSeconds % 3600) / 60);
-    const seconds = totalSeconds % 60;
-
-    const pad = (num) => String(num).padStart(2, '0');
-    return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
+  const totalSeconds = Math.floor(ms / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  const pad = (num) => String(num).padStart(2, '0');
+  return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
 };
 
-const formatDurationDetailed = (ms) => {
-    const totalSeconds = Math.floor(ms / 1000);
-    const hours = Math.floor(totalSeconds / 3600);
-    const minutes = Math.floor((totalSeconds % 3600) / 60);
-    const seconds = totalSeconds % 60;
-
-    const parts = [];
-    if (hours > 0) parts.push(`${hours}h`);
-    if (minutes > 0) parts.push(`${minutes}m`);
-    if (seconds > 0 || parts.length === 0) parts.push(`${seconds}s`);
-
-    return parts.join(' ');
-};
-
-const getDateRange = (filter) => {
-    const now = new Date();
-    const startDate = new Date();
-
-    switch (filter) {
-        case 'today':
-            startDate.setHours(0, 0, 0, 0);
-            return { start: startDate.getTime(), end: now.getTime() };
-        case 'yesterday':
-            startDate.setDate(now.getDate() - 1);
-            startDate.setHours(0, 0, 0, 0);
-            const yesterdayEnd = new Date(startDate);
-            yesterdayEnd.setHours(23, 59, 59, 999);
-            return { start: startDate.getTime(), end: yesterdayEnd.getTime() };
-        case '3days':
-            startDate.setDate(now.getDate() - 3);
-            return { start: startDate.getTime(), end: now.getTime() };
-        case '5days':
-            startDate.setDate(now.getDate() - 5);
-            return { start: startDate.getTime(), end: now.getTime() };
-        case 'week':
-            startDate.setDate(now.getDate() - 7);
-            return { start: startDate.getTime(), end: now.getTime() };
-        case 'month':
-            startDate.setMonth(now.getMonth() - 1);
-            return { start: startDate.getTime(), end: now.getTime() };
-        case 'all':
-        default:
-            return { start: null, end: null };
-    }
+// ✅ Get device type badge styling
+const getDeviceBadge = (timer) => {
+  if (timer.isFake) {
+    return {
+      icon: <AlertTriangle className="w-3 h-3" />,
+      label: 'MANUAL',
+      className: 'bg-red-100 text-red-600 border border-red-300'
+    };
+  } else if (timer.isMobile) {
+    return {
+      icon: <Smartphone className="w-3 h-3" />,
+      label: 'MOBILE',
+      className: 'bg-blue-100 text-blue-600 border border-blue-300'
+    };
+  } else if (timer.isDesktop) {
+    return {
+      icon: <Monitor className="w-3 h-3" />,
+      label: 'DESKTOP',
+      className: 'bg-green-100 text-green-600 border border-green-300'
+    };
+  } else {
+    return {
+      icon: <Clock className="w-3 h-3" />,
+      label: timer.source?.toUpperCase() || 'UNKNOWN',
+      className: 'bg-gray-100 text-gray-600 border border-gray-300'
+    };
+  }
 };
 
 function useAuth() {
-    const [accessToken, setAccessToken] = useState(null);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState(null);
+  const [accessToken, setAccessToken] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-    useEffect(() => {
-        const urlParams = new URLSearchParams(window.location.search);
-        const tokenFromUrl = urlParams.get('access_token');
-        const storedToken = localStorage.getItem(ACCESS_TOKEN_KEY);
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const tokenFromUrl = urlParams.get('access_token');
+    const storedToken = localStorage.getItem(ACCESS_TOKEN_KEY);
 
-        if (tokenFromUrl) {
-            localStorage.setItem(ACCESS_TOKEN_KEY, tokenFromUrl);
-            setAccessToken(tokenFromUrl);
-            window.history.replaceState({}, document.title, window.location.pathname);
-            setLoading(false);
-        } else if (storedToken) {
-            setAccessToken(storedToken);
-            setLoading(false);
-        } else {
-            handleRedirectToClickUp();
+    if (tokenFromUrl) {
+      localStorage.setItem(ACCESS_TOKEN_KEY, tokenFromUrl);
+      setAccessToken(tokenFromUrl);
+      window.history.replaceState({}, document.title, window.location.pathname);
+      setLoading(false);
+    } else if (storedToken) {
+      setAccessToken(storedToken);
+      setLoading(false);
+    } else {
+      handleRedirectToClickUp();
+    }
+  }, []);
+
+  const handleRedirectToClickUp = () => {
+    if (!CLICKUP_CLIENT_ID || !REDIRECT_URI) {
+      setError("Configuration Error: Missing CLIENT_ID or REDIRECT_URI");
+      setLoading(false);
+      return;
+    }
+    const authUrl = `https://app.clickup.com/api?client_id=${CLICKUP_CLIENT_ID}&redirect_uri=${REDIRECT_URI}&response_type=code&scope=${OAUTH_SCOPES}`;
+    window.location.replace(authUrl);
+  };
+
+  const logout = () => {
+    localStorage.removeItem(ACCESS_TOKEN_KEY);
+    setAccessToken(null);
+    handleRedirectToClickUp();
+  };
+
+  const authorizedFetch = useCallback(async (url) => {
+    if (!accessToken) return { ok: false, status: 401, error: "Unauthorized" };
+
+    try {
+      const response = await fetch(url, {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json'
         }
-    }, []);
+      });
+      const data = await response.json();
 
-    const handleRedirectToClickUp = () => {
-        if (!CLICKUP_CLIENT_ID || !REDIRECT_URI) {
-            setError("Configuration Error: Missing CLIENT_ID or REDIRECT_URI in environment variables.");
-            setLoading(false);
-            return;
-        }
+      if (response.status === 401) {
+        alert("Token expired. Please re-authenticate.");
+        logout();
+        return { ok: false, status: 401, error: "Token expired" };
+      }
 
-        const authUrl = `https://app.clickup.com/api?client_id=${CLICKUP_CLIENT_ID}&redirect_uri=${REDIRECT_URI}&response_type=code&scope=${OAUTH_SCOPES}`;
-        console.log("Redirecting to ClickUp for OAuth...");
-        window.location.replace(authUrl);
-    };
+      return { ok: response.ok, status: response.status, data, error: data.error };
+    } catch (err) {
+      return { ok: false, status: 500, error: err.message };
+    }
+  }, [accessToken]);
 
-    const logout = () => {
-        localStorage.removeItem(ACCESS_TOKEN_KEY);
-        setAccessToken(null);
-        handleRedirectToClickUp();
-    };
-
-    const authorizedFetch = useCallback(async (url) => {
-        if (!accessToken) return { ok: false, status: 401, error: "Unauthorized" };
-
-        try {
-            const response = await fetch(url, {
-                headers: {
-                    'Authorization': `Bearer ${accessToken}`,
-                    'Content-Type': 'application/json'
-                }
-            });
-            const data = await response.json();
-
-            if (response.status === 401) {
-                alert("Authorization token expired. Please re-authenticate.");
-                logout();
-                return { ok: false, status: 401, error: "Token expired" };
-            }
-
-            return { ok: response.ok, status: response.status, data, error: data.error };
-        } catch (err) {
-            return { ok: false, status: 500, error: err.message };
-        }
-    }, [accessToken]);
-
-    return { accessToken, loading, error, logout, authorizedFetch };
+  return { accessToken, loading, error, logout, authorizedFetch };
 }
 
-export default function ListTimerApp() {
-    const { loading, error, logout, authorizedFetch } = useAuth();
-    const [spaces, setSpaces] = useState([]);
-    const [folders, setFolders] = useState([]);
-    const [lists, setLists] = useState([]);
-    const [timers, setTimers] = useState([]);
-    const [runningTimers, setRunningTimers] = useState([]);
-    const [allRunningTimers, setAllRunningTimers] = useState([]);
-    const [filteredTimers, setFilteredTimers] = useState([]);
-    const [apiStatus, setApiStatus] = useState({ loading: false, error: null });
-    const [autoRefresh, setAutoRefresh] = useState(false);
-    const [currentTime, setCurrentTime] = useState(Date.now());
-    const [showAllRunning, setShowAllRunning] = useState(true);
+export default function SimplifiedTimerApp() {
+  const { loading, error, logout, authorizedFetch } = useAuth();
 
-    const [selectedSpaceId, setSelectedSpaceId] = useState('');
-    const [selectedFolderId, setSelectedFolderId] = useState('');
-    const [selectedListId, setSelectedListId] = useState('');
-    const [selectedDateFilter, setSelectedDateFilter] = useState('week');
+  const [allData, setAllData] = useState([]);
+  const [runningTimers, setRunningTimers] = useState([]);
+  const [filteredData, setFilteredData] = useState([]);
+  const [availableUsers, setAvailableUsers] = useState([]);
+  const [availableFolders, setAvailableFolders] = useState([]);
+  const [stats, setStats] = useState(null);
 
-    // Update current time every second
-    useEffect(() => {
-        const interval = setInterval(() => {
-            setCurrentTime(Date.now());
-        }, 1000);
+  const [selectedDays, setSelectedDays] = useState(3);
+  const [selectedUsers, setSelectedUsers] = useState([]);
+  const [selectedFolders, setSelectedFolders] = useState([]);
+  const [searchQuery, setSearchQuery] = useState('');
 
-        return () => clearInterval(interval);
-    }, []);
+  const [apiStatus, setApiStatus] = useState({ loading: false, error: null });
+  const [autoRefresh, setAutoRefresh] = useState(false);
+  const [currentTime, setCurrentTime] = useState(Date.now());
 
-    useEffect(() => {
-        if (timers.length === 0) {
-            setFilteredTimers([]);
-            return;
-        }
+  // Update current time every second
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCurrentTime(Date.now());
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
 
-        if (selectedDateFilter === 'all') {
-            setFilteredTimers(timers);
-            return;
-        }
+  // Fetch data
+  const fetchData = useCallback(async () => {
+    if (!authorizedFetch) return;
 
-        const dateRange = getDateRange(selectedDateFilter);
-        const filtered = timers.filter(timer => {
-            const timerDate = new Date(timer.startTime).getTime();
-            return timerDate >= dateRange.start && timerDate <= dateRange.end;
-        });
+    setApiStatus({ loading: true, error: null });
 
-        setFilteredTimers(filtered);
-    }, [timers, selectedDateFilter]);
+    const { ok, data, error } = await authorizedFetch(`/api/tasks?days=${selectedDays}`);
 
-    const fetchAllRunningTimers = useCallback(async () => {
-        if (!authorizedFetch) return;
+    if (ok) {
+      console.log('✅ Data received:', data);
+      console.log('🏃 Running timers:', data.runningTimers);
 
-        const { ok, data, error } = await authorizedFetch('/api/running-timers');
+      setAllData(data.data || []);
+      setRunningTimers(data.runningTimers || []);
+      setAvailableUsers(data.filters?.users || []);
+      setAvailableFolders(data.filters?.folders || []);
+      setStats(data.stats || null);
+    } else {
+      console.error('❌ API Error:', error);
+      setApiStatus({ loading: false, error: `Failed to load data: ${error}` });
+    }
+    setApiStatus(prev => ({ ...prev, loading: false }));
+  }, [authorizedFetch, selectedDays]);
 
-        if (ok) {
-            setAllRunningTimers(data.runningTimers || []);
-        } else {
-            console.error('❌ Failed to fetch running timers:', error);
-        }
-    }, [authorizedFetch]);
+  // Initial fetch
+  useEffect(() => {
+    if (authorizedFetch) {
+      fetchData();
+    }
+  }, [authorizedFetch, selectedDays, fetchData]);
 
-    useEffect(() => {
-        if (!authorizedFetch) return;
+  // Auto-refresh
+  useEffect(() => {
+    if (!autoRefresh) return;
+    const interval = setInterval(() => {
+      fetchData();
+    }, 10000);
+    return () => clearInterval(interval);
+  }, [autoRefresh, fetchData]);
 
-        const fetchSpaces = async () => {
-            setApiStatus({ loading: true, error: null });
-            const { ok, data, error } = await authorizedFetch('/api/spaces');
+  // Apply filters
+  useEffect(() => {
+    let filtered = [...allData];
 
-            if (ok) {
-                setSpaces(data.data || []);
-                if (data.data && data.data.length > 0) {
-                    setSelectedSpaceId(data.data[0].id);
-                }
-            } else {
-                setApiStatus({ loading: false, error: `Failed to load spaces: ${error}` });
-            }
-            setApiStatus(prev => ({ ...prev, loading: false }));
-        };
-        fetchSpaces();
-        fetchAllRunningTimers();
-    }, [authorizedFetch, fetchAllRunningTimers]);
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
 
-    useEffect(() => {
-        setFolders([]);
-        setSelectedFolderId('');
-        setLists([]);
-        setSelectedListId('');
-        setTimers([]);
-        setRunningTimers([]);
-        setFilteredTimers([]);
+    let dateFilterStart;
 
-        if (!selectedSpaceId || !authorizedFetch) return;
-
-        const fetchFolders = async () => {
-            setApiStatus({ loading: true, error: null });
-            const { ok, data, error } = await authorizedFetch(`/api/folders?spaceId=${selectedSpaceId}`);
-
-            if (ok) {
-                setFolders(data.data || []);
-                if (data.data && data.data.length > 0) {
-                    setSelectedFolderId(data.data[0].id);
-                } else {
-                    setSelectedFolderId(selectedSpaceId);
-                }
-            } else {
-                setApiStatus({ loading: false, error: `Failed to load folders: ${error}` });
-            }
-            setApiStatus(prev => ({ ...prev, loading: false }));
-        };
-        fetchFolders();
-    }, [selectedSpaceId, authorizedFetch]);
-
-    useEffect(() => {
-        setLists([]);
-        setSelectedListId('');
-        setTimers([]);
-        setRunningTimers([]);
-        setFilteredTimers([]);
-
-        if (!selectedFolderId || !authorizedFetch) return;
-
-        const fetchLists = async () => {
-            setApiStatus({ loading: true, error: null });
-            const fetchId = selectedFolderId;
-
-            const { ok, data, error } = await authorizedFetch(`/api/lists?folderId=${fetchId}`);
-
-            if (ok) {
-                setLists(data.data || []);
-                if (data.data && data.data.length > 0) {
-                    setSelectedListId(data.data[0].id);
-                }
-            } else {
-                setApiStatus({ loading: false, error: `Failed to load lists: ${error}` });
-            }
-            setApiStatus(prev => ({ ...prev, loading: false }));
-        };
-        fetchLists();
-    }, [selectedFolderId, authorizedFetch]);
-
-    const fetchTimers = useCallback(async (listId) => {
-        if (!listId || !authorizedFetch) {
-            setTimers([]);
-            setRunningTimers([]);
-            setFilteredTimers([]);
-            return;
-        }
-
-        setApiStatus({ loading: true, error: null });
-
-        const { ok, data, error } = await authorizedFetch(`/api/tasks?listId=${listId}`);
-
-        if (ok) {
-            setTimers(data.data || []);
-            setRunningTimers(data.runningTimers || []);
-        } else {
-            setApiStatus({ loading: false, error: `Failed to load time entries: ${error}` });
-            setTimers([]);
-            setRunningTimers([]);
-            setFilteredTimers([]);
-        }
-        setApiStatus(prev => ({ ...prev, loading: false }));
-    }, [authorizedFetch]);
-
-    useEffect(() => {
-        if (selectedListId) {
-            fetchTimers(selectedListId);
-        }
-    }, [selectedListId, fetchTimers]);
-
-    useEffect(() => {
-        if (!autoRefresh) return;
-
-        const interval = setInterval(() => {
-            fetchAllRunningTimers();
-            if (selectedListId) {
-                fetchTimers(selectedListId);
-            }
-        }, 10000);
-
-        return () => clearInterval(interval);
-    }, [autoRefresh, selectedListId, fetchTimers, fetchAllRunningTimers]);
-
-    const handleManualRefresh = () => {
-        fetchAllRunningTimers();
-        if (selectedListId) {
-            fetchTimers(selectedListId);
-        }
-    };
-
-    const totalFilteredTime = filteredTimers.reduce((sum, timer) => sum + timer.duration, 0);
-
-    const getDateRangeDisplay = () => {
-        if (selectedDateFilter === 'all') return 'All Time';
-
-        const range = getDateRange(selectedDateFilter);
-        const startDate = new Date(range.start);
-        const endDate = new Date(range.end);
-
-        return `${startDate.toLocaleDateString()} - ${endDate.toLocaleDateString()}`;
-    };
-
-    const getElapsedTime = (startTime) => {
-        const elapsed = currentTime - startTime;
-        return formatDuration(elapsed);
-    };
-
-    const currentListRunningTimers = allRunningTimers.filter(
-        timer => selectedListId && String(timer.listId) === String(selectedListId)
-    );
-
-    // Calculate total active time across all running timers
-    const totalActiveTime = allRunningTimers.reduce((sum, timer) => {
-        return sum + (currentTime - timer.startTime);
-    }, 0);
-
-    if (loading) {
-        return (
-            <div className="flex items-center justify-center h-screen bg-gradient-to-br from-indigo-50 via-purple-50 to-pink-50">
-                <div className="p-8 bg-white rounded-2xl shadow-2xl flex items-center space-x-4">
-                    <RefreshCw className="w-8 h-8 animate-spin text-indigo-600" />
-                    <p className="text-gray-700 text-lg font-medium">Authorizing with ClickUp...</p>
-                </div>
-            </div>
-        );
+    switch(selectedDays) {
+      case 1:
+        dateFilterStart = startOfToday.getTime();
+        break;
+      case 2:
+        dateFilterStart = new Date(startOfToday.getTime() - (24 * 60 * 60 * 1000)).getTime();
+        break;
+      case 3:
+        dateFilterStart = new Date(startOfToday.getTime() - (2 * 24 * 60 * 60 * 1000)).getTime();
+        break;
+      case 7:
+        dateFilterStart = new Date(startOfToday.getTime() - (6 * 24 * 60 * 60 * 1000)).getTime();
+        break;
+      case 30:
+        dateFilterStart = new Date(startOfToday.getTime() - (29 * 24 * 60 * 60 * 1000)).getTime();
+        break;
+      default:
+        dateFilterStart = 0;
     }
 
-    if (error) {
-        return (
-            <div className="min-h-screen bg-gradient-to-br from-red-50 to-orange-50 p-8 flex items-center justify-center">
-                <div className="max-w-md w-full p-8 bg-white border-2 border-red-200 rounded-2xl shadow-2xl">
-                    <div className="flex items-center justify-center w-16 h-16 bg-red-100 rounded-full mx-auto mb-4">
-                        <AlertTriangle className="w-8 h-8 text-red-600" />
-                    </div>
-                    <h2 className="text-2xl font-bold mb-4 text-center text-gray-800">Authorization Error</h2>
-                    <p className="text-gray-600 text-center mb-6">{error}</p>
-                    <button
-                        onClick={logout}
-                        className="w-full px-6 py-3 bg-red-500 text-white rounded-xl shadow-lg hover:bg-red-600 transition duration-200 font-semibold flex items-center justify-center gap-2"
-                    >
-                        <LogOut className="w-5 h-5" />
-                        Logout and Retry
-                    </button>
-                </div>
-            </div>
-        );
+    if (dateFilterStart > 0) {
+      filtered = filtered.filter(item => item.startTime >= dateFilterStart);
     }
 
+    if (selectedUsers.length > 0) {
+      filtered = filtered.filter(item => selectedUsers.includes(item.userId));
+    }
+
+    if (selectedFolders.length > 0) {
+      filtered = filtered.filter(item => {
+        const folderId = item.folderId || 'no-folder';
+        return selectedFolders.includes(folderId);
+      });
+    }
+
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter(item =>
+        item.taskName.toLowerCase().includes(query) ||
+        item.user.toLowerCase().includes(query) ||
+        item.folderName.toLowerCase().includes(query)
+      );
+    }
+
+    filtered.sort((a, b) => b.startTime - a.startTime);
+
+    setFilteredData(filtered);
+  }, [allData, selectedUsers, selectedFolders, searchQuery, selectedDays]);
+
+  const getElapsedTime = (startTime) => {
+    const elapsed = currentTime - startTime;
+    return formatDuration(elapsed);
+  };
+
+  const toggleUserSelection = (userId) => {
+    setSelectedUsers(prev => {
+      if (prev.includes(userId)) {
+        return prev.filter(id => id !== userId);
+      } else {
+        return [...prev, userId];
+      }
+    });
+  };
+
+  const toggleFolderSelection = (folderId) => {
+    setSelectedFolders(prev => {
+      if (prev.includes(folderId)) {
+        return prev.filter(id => id !== folderId);
+      } else {
+        return [...prev, folderId];
+      }
+    });
+  };
+
+  const totalFilteredTime = filteredData.reduce((sum, timer) => sum + timer.duration, 0);
+  const totalActiveTime = runningTimers.reduce((sum, timer) => sum + (currentTime - timer.startTime), 0);
+
+  const clearFilters = () => {
+    setSelectedUsers([]);
+    setSelectedFolders([]);
+    setSearchQuery('');
+  };
+
+  if (loading) {
     return (
-        <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 p-4 md:p-8 font-sans">
-            {/* Header */}
-     <header className="mb-8 pb-6 border-b-2 border-indigo-100">
-  <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
-    <div>
-      <h1 className="text-4xl font-bold text-gray-800 flex items-center gap-3 mb-2">
-        <div className="p-2 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl shadow-lg">
-          <Clock className="w-8 h-8 text-white" />
+      <div className="flex items-center justify-center h-screen bg-gradient-to-br from-indigo-50 via-purple-50 to-pink-50">
+        <div className="p-8 bg-white rounded-2xl shadow-2xl flex items-center space-x-4">
+          <RefreshCw className="w-8 h-8 animate-spin text-indigo-600" />
+          <p className="text-gray-700 text-lg font-medium">Authorizing with ClickUp...</p>
         </div>
-        ClickUp Time Dashboard
-      </h1>
-      <p className="text-gray-600 ml-16">Real-time tracking and analytics</p>
-    </div>
-
-    <div className="flex flex-wrap items-center gap-3">
-
-      {/* Auto Refresh */}
-      <label className="flex items-center gap-2 px-4 py-2 bg-white rounded-xl shadow-md text-sm text-gray-700 cursor-pointer hover:shadow-lg transition-shadow">
-        <input
-          type="checkbox"
-          checked={autoRefresh}
-          onChange={(e) => setAutoRefresh(e.target.checked)}
-          className="w-4 h-4 text-indigo-600 rounded focus:ring-2 focus:ring-indigo-500"
-        />
-        <Zap className="w-4 h-4 text-yellow-500" />
-        <span className="font-medium">Auto-refresh (10s)</span>
-      </label>
-
-      {/* Refresh Button */}
-      <button
-        onClick={handleManualRefresh}
-        disabled={apiStatus.loading}
-        className="flex items-center gap-2 px-5 py-2 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-xl shadow-lg hover:shadow-xl hover:scale-105 transition-all duration-200 text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
-      >
-        <RefreshCw className={`w-4 h-4 ${apiStatus.loading ? 'animate-spin' : ''}`} />
-        Refresh
-      </button>
-
-      {/* Logout Button */}
-      <button
-        onClick={logout}
-        className="flex items-center gap-2 px-5 py-2 bg-white text-gray-700 rounded-xl shadow-md hover:shadow-lg hover:bg-gray-50 transition-all duration-200 text-sm font-semibold"
-      >
-        <LogOut className="w-4 h-4" />
-        Logout
-      </button>
-
-      {/* Attendence Button */}
-      <Link href="/attendence">
-        <button
-          className="flex items-center gap-2 px-5 py-2 bg-white text-gray-700 rounded-xl shadow-md hover:shadow-lg hover:bg-gray-50 transition-all duration-200 text-sm font-semibold"
-        >
-          <Calendar className="w-4 h-4" />
-          Attendence
-        </button>
-      </Link>
-
-    </div>
-  </div>
-</header>
-
-
-            {/* Filters */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8 bg-white p-6 rounded-2xl shadow-lg border border-gray-100">
-                <div className='flex flex-col'>
-                    <label className="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
-                        <Layers className="w-4 h-4 text-indigo-500" />
-                        <span>Space</span>
-                    </label>
-                    <select
-                        value={selectedSpaceId}
-                        onChange={(e) => setSelectedSpaceId(e.target.value)}
-                        className="p-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all bg-gray-50 hover:bg-white"
-                        disabled={spaces.length === 0}
-                    >
-                        {spaces.length === 0 && <option value="">No spaces available</option>}
-                        {spaces.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                    </select>
-                </div>
-
-                <div className='flex flex-col'>
-                    <label className="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
-                        <Folder className="w-4 h-4 text-indigo-500" />
-                        <span>Folder</span>
-                    </label>
-                    <select
-                        value={selectedFolderId}
-                        onChange={(e) => setSelectedFolderId(e.target.value)}
-                        className="p-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all bg-gray-50 hover:bg-white"
-                        disabled={folders.length === 0 && selectedFolderId !== selectedSpaceId}
-                    >
-                        {folders.length === 0 && selectedFolderId === selectedSpaceId && (
-                            <option value={selectedSpaceId}>Ungrouped Lists</option>
-                        )}
-                        {folders.map(f => (
-                            <option key={f.id} value={f.id}>
-                                {f.name}
-                            </option>
-                        ))}
-                    </select>
-                </div>
-
-                <div className='flex flex-col'>
-                    <label className="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
-                        <List className="w-4 h-4 text-indigo-500" />
-                        <span>List</span>
-                    </label>
-                    <select
-                        value={selectedListId}
-                        onChange={(e) => setSelectedListId(e.target.value)}
-                        className="p-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all bg-gray-50 hover:bg-white"
-                        disabled={lists.length === 0}
-                    >
-                        {lists.length === 0 && <option value="">No lists available</option>}
-                        {lists.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
-                    </select>
-                </div>
-
-                <div className='flex flex-col'>
-                    <label className="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
-                        <Calendar className="w-4 h-4 text-indigo-500" />
-                        <span>Date Range</span>
-                    </label>
-                    <select
-                        value={selectedDateFilter}
-                        onChange={(e) => setSelectedDateFilter(e.target.value)}
-                        className="p-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all bg-gray-50 hover:bg-white"
-                    >
-                        {DATE_FILTER_OPTIONS.map(option => (
-                            <option key={option.value} value={option.value}>
-                                {option.label}
-                            </option>
-                        ))}
-                    </select>
-                </div>
-            </div>
-
-            {/* Live Activity Stats Bar */}
-            {allRunningTimers.length > 0 && (
-                <div className="mb-6 grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div className="bg-gradient-to-br from-green-500 to-emerald-600 rounded-2xl p-6 shadow-xl text-white">
-                        <div className="flex items-center justify-between mb-2">
-                            <span className="text-sm font-medium opacity-90">Active Timers</span>
-                            <Activity className="w-5 h-5 animate-pulse" />
-                        </div>
-                        <div className="text-4xl font-bold">{allRunningTimers.length}</div>
-                        <div className="text-xs opacity-75 mt-1">Currently tracking</div>
-                    </div>
-
-                    <div className="bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl p-6 shadow-xl text-white">
-                        <div className="flex items-center justify-between mb-2">
-                            <span className="text-sm font-medium opacity-90">Total Active Time</span>
-                            <Clock className="w-5 h-5" />
-                        </div>
-                        <div className="text-4xl font-bold">{formatDurationDetailed(totalActiveTime)}</div>
-                        <div className="text-xs opacity-75 mt-1">Across all tasks</div>
-                    </div>
-
-                    <div className="bg-gradient-to-br from-purple-500 to-pink-600 rounded-2xl p-6 shadow-xl text-white">
-                        <div className="flex items-center justify-between mb-2">
-                            <span className="text-sm font-medium opacity-90">Team Members</span>
-                            <User className="w-5 h-5" />
-                        </div>
-                        <div className="text-4xl font-bold">{new Set(allRunningTimers.map(t => t.userId)).size}</div>
-                        <div className="text-xs opacity-75 mt-1">Currently active</div>
-                    </div>
-                </div>
-            )}
-
-            {/* Running Timers Section - UPDATED DARK DESIGN */}
-            <div className="mb-8">
-                <div className="flex items-center justify-between mb-4">
-                    <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-3">
-                        <div className="relative">
-                            <Activity className="w-7 h-7 text-green-600 animate-pulse" />
-                            <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full animate-ping"></span>
-                        </div>
-                        Live Activity Monitor
-                        <span className="text-lg font-normal text-gray-500">
-                            ({allRunningTimers.length} active)
-                        </span>
-                    </h2>
-                    <button
-                        onClick={() => setShowAllRunning(!showAllRunning)}
-                        className="px-4 py-2 bg-white rounded-xl shadow-md hover:shadow-lg transition-all text-sm font-medium text-gray-700"
-                    >
-                        {showAllRunning ? 'Show Current List Only' : 'Show All Lists'}
-                    </button>
-                </div>
-
-                {allRunningTimers.length === 0 ? (
-                    <div className="bg-white rounded-2xl p-12 text-center border-2 border-dashed border-gray-300 shadow-lg">
-                        <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                            <Activity className="w-10 h-10 text-gray-400" />
-                        </div>
-                        <h3 className="text-xl font-semibold text-gray-700 mb-2">No Active Timers</h3>
-                        <p className="text-gray-500 mb-4">
-                            Start tracking time in ClickUp to see real-time activity here
-                        </p>
-                        <div className="inline-flex items-center gap-2 px-4 py-2 bg-green-50 text-green-700 rounded-lg text-sm">
-                            <Play className="w-4 h-4" />
-                            <span>Click the timer icon in any ClickUp task to begin</span>
-                        </div>
-                    </div>
-                ) : (
-                    <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
-                        {(showAllRunning ? allRunningTimers : currentListRunningTimers).map((timer, index) => (
-                            <div
-                                key={`running_${timer.taskId}_${timer.userId}_${index}`}
-                                className="group bg-gradient-to-br from-gray-900 via-[#111827] to-[#1e2a4a] rounded-xl shadow-xl hover:shadow-2xl transition-all duration-300 overflow-hidden border border-gray-700 hover:border-green-400/30 transform hover:-translate-y-1"
-                            >
-                                {/* Card Header */}
-                                <div className="bg-gradient-to-r from-green-600/20 to-emerald-600/10 p-3 border-b border-gray-700">
-                                    <div className="flex items-center justify-between">
-                                        <div className="flex items-center gap-2">
-                                            <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-                                            <span className="text-xs font-bold text-green-400 uppercase tracking-wide">
-                                                Live Tracking
-                                            </span>
-                                        </div>
-                                        <div className="flex items-center gap-2 bg-black/30 backdrop-blur-sm px-2 py-1 rounded-lg border border-green-500/20">
-                                            <Clock className="w-3 h-3 text-green-400" />
-                                            <span className="text-white font-mono font-bold text-sm">
-                                                {getElapsedTime(timer.startTime)}
-                                            </span>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {/* Card Body */}
-                                <div className="p-4">
-                                    {/* User Info */}
-                                    <div className="flex items-center gap-3 mb-3 pb-3 border-b border-gray-700">
-                                        <div className="w-8 h-8 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold text-xs shadow-lg">
-                                            {timer.user.charAt(0).toUpperCase()}
-                                        </div>
-                                        <div className="flex-1 min-w-0">
-                                            <div className="font-semibold text-white text-sm truncate">
-                                                {timer.user}
-                                            </div>
-                                            <div className="text-xs text-gray-400">
-                                                Started {new Date(timer.startTime).toLocaleTimeString()}
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    {/* Task Info */}
-                                    <div className="mb-3">
-                                        <div className="flex items-start gap-2 mb-2">
-                                            <Tag className="w-3 h-3 text-indigo-400 mt-1 flex-shrink-0" />
-                                            {timer.taskUrl ? (
-                                                <a
-                                                    href={timer.taskUrl}
-                                                    target="_blank"
-                                                    rel="noopener noreferrer"
-                                                    className="text-indigo-300 hover:text-indigo-200 font-medium text-xs leading-snug group-hover:underline flex items-center gap-1"
-                                                >
-                                                    <span className="line-clamp-2">{timer.taskName}</span>
-                                                    <ExternalLink className="w-3 h-3 flex-shrink-0" />
-                                                </a>
-                                            ) : (
-                                                <p className="text-gray-300 text-xs font-medium line-clamp-2">
-                                                    {timer.taskName}
-                                                </p>
-                                            )}
-                                        </div>
-
-                                        {timer.listName && (
-                                            <div className="flex items-center gap-2 text-xs text-gray-500 ml-5">
-                                                <MapPin className="w-3 h-3" />
-                                                <span className="truncate">{timer.listName}</span>
-                                            </div>
-                                        )}
-                                    </div>
-
-                                    {/* Footer Stats */}
-                                    <div className="flex items-center justify-between pt-3 border-t border-gray-700">
-                                        <div className="flex items-center gap-2">
-                                            <div className={`px-2 py-1 rounded text-xs font-semibold ${
-                                                timer.isFake
-                                                    ? 'bg-orange-500/20 text-orange-300 border border-orange-500/30'
-                                                    : 'bg-blue-500/20 text-blue-300 border border-blue-500/30'
-                                            }`}>
-                                                {timer.source || 'Unknown'}
-                                            </div>
-                                        </div>
-                                        <div className="text-xs text-gray-400 font-medium">
-                                            {formatDurationDetailed(currentTime - timer.startTime)} elapsed
-                                        </div>
-                                    </div>
-
-                                    {timer.isFake && (
-                                        <div className="mt-3 flex items-center gap-2 text-xs text-orange-400 bg-orange-500/10 px-2 py-1.5 rounded border border-orange-500/20">
-                                            <AlertTriangle className="w-3 h-3" />
-                                            <span className="font-medium">Manual Time Entry</span>
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                )}
-            </div>
-
-            {/* Summary Stats */}
-            <div className="mb-6 bg-white rounded-2xl shadow-lg p-6 border border-gray-100">
-                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                    <div className="flex flex-col gap-3">
-                        <div className="flex items-center gap-3">
-                            <TrendingUp className="w-6 h-6 text-green-500" />
-                            <div>
-                                <div className="text-sm text-gray-500 font-medium">Filtered Time</div>
-                                <div className="text-2xl font-bold text-indigo-600">
-                                    {formatDuration(totalFilteredTime)}
-                                </div>
-                            </div>
-                            {filteredTimers.length > 0 && (
-                                <span className="px-3 py-1 bg-indigo-100 text-indigo-700 rounded-full text-sm font-semibold">
-                                    {filteredTimers.length} entries
-                                </span>
-                            )}
-                        </div>
-                        <div className="flex items-center gap-2 text-sm text-gray-600">
-                            <Calendar className="w-4 h-4" />
-                            <span className="font-medium">{getDateRangeDisplay()}</span>
-                            {timers.length > 0 && (
-                                <span className="text-gray-400">
-                                    • Total: {formatDuration(timers.reduce((sum, timer) => sum + timer.duration, 0))} ({timers.length} entries)
-                                </span>
-                            )}
-                        </div>
-                    </div>
-
-                    {apiStatus.loading && (
-                        <div className="flex items-center gap-2 px-4 py-2 bg-indigo-50 text-indigo-600 rounded-xl">
-                            <RefreshCw className="w-4 h-4 animate-spin" />
-                            <span className="text-sm font-medium">Fetching Data...</span>
-                        </div>
-                    )}
-                    {apiStatus.error && (
-                        <div className="text-sm text-red-600 px-4 py-2 bg-red-50 rounded-xl border border-red-200 font-medium">
-                            {apiStatus.error}
-                        </div>
-                    )}
-                </div>
-            </div>
-
-            {/* Time Entries Table */}
-            <div className="bg-white rounded-2xl shadow-lg overflow-hidden border border-gray-100">
-                <div className="overflow-x-auto">
-                    <table className="min-w-full divide-y divide-gray-200">
-                        <thead className="bg-gradient-to-r from-gray-50 to-gray-100">
-                            <tr>
-                                <th className="px-6 py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">Status</th>
-                                <th className="px-6 py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">User</th>
-                                <th className="px-6 py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">Task</th>
-                                <th className="px-6 py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">Start Time</th>
-                                <th className="px-6 py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">End Time</th>
-                                <th className="px-6 py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">Duration</th>
-                                <th className="px-6 py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">Source</th>
-                            </tr>
-                        </thead>
-                        <tbody className="bg-white divide-y divide-gray-100">
-                            {filteredTimers.length === 0 && !apiStatus.loading ? (
-                                <tr>
-                                    <td colSpan="7" className="px-6 py-12 text-center">
-                                        <div className="flex flex-col items-center gap-3">
-                                            <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center">
-                                                <Clock className="w-8 h-8 text-gray-400" />
-                                            </div>
-                                            <p className="text-gray-600 font-medium">
-                                                {selectedListId
-                                                    ? `No time entries found for ${DATE_FILTER_OPTIONS.find(opt => opt.value === selectedDateFilter)?.label}`
-                                                    : "Please select a List to view time entries"}
-                                            </p>
-                                        </div>
-                                    </td>
-                                </tr>
-                            ) : (
-                                filteredTimers.map((timer, index) => (
-                                    <tr
-                                        key={`${timer.taskId}_${timer.userId}_${index}`}
-                                        className={`
-                                            transition-all duration-200 hover:bg-gray-50
-                                            ${timer.isRunning
-                                                ? 'bg-green-50 border-l-4 border-l-green-500'
-                                                : timer.isFake
-                                                ? 'bg-red-50 border-l-4 border-l-red-400'
-                                                : ''
-                                            }
-                                        `}
-                                    >
-                                        <td className="px-6 py-4 whitespace-nowrap">
-                                            <div className="flex items-center gap-2">
-                                                <span className={`px-3 py-1 inline-flex text-xs font-bold rounded-full ${
-                                                    timer.status === 'running'
-                                                        ? 'bg-green-100 text-green-800'
-                                                        : 'bg-gray-100 text-gray-700'
-                                                }`}>
-                                                    {timer.status}
-                                                </span>
-                                                {timer.isFake && (
-                                                    <AlertTriangle className="w-4 h-4 text-red-500" />
-                                                )}
-                                                {timer.isRunning && (
-                                                    <Activity className="w-4 h-4 text-green-500 animate-pulse" />
-                                                )}
-                                            </div>
-                                        </td>
-                                        <td className="px-6 py-4 whitespace-nowrap">
-                                            <div className="flex items-center gap-3">
-                                                <div className="w-8 h-8 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-full flex items-center justify-center text-white text-xs font-bold">
-                                                    {timer.user.charAt(0).toUpperCase()}
-                                                </div>
-                                                <span className="text-sm font-medium text-gray-900">{timer.user}</span>
-                                            </div>
-                                        </td>
-                                        <td className="px-6 py-4 max-w-xs">
-                                            {timer.taskUrl ? (
-                                                <a
-                                                    href={timer.taskUrl}
-                                                    target="_blank"
-                                                    rel="noopener noreferrer"
-                                                    className={`font-medium text-sm hover:underline flex items-center gap-1 ${
-                                                        timer.isRunning
-                                                            ? 'text-green-600 hover:text-green-800'
-                                                            : timer.isFake
-                                                            ? 'text-red-600 hover:text-red-800'
-                                                            : 'text-indigo-600 hover:text-indigo-800'
-                                                    }`}
-                                                >
-                                                    <span className="truncate">{timer.taskName}</span>
-                                                    <ExternalLink className="w-3 h-3 flex-shrink-0" />
-                                                </a>
-                                            ) : (
-                                                <span className={`text-sm font-medium truncate block ${
-                                                    timer.isFake ? 'text-red-600' : timer.isRunning ? 'text-green-600' : 'text-gray-700'
-                                                }`}>
-                                                    {timer.taskName}
-                                                </span>
-                                            )}
-                                        </td>
-                                        <td className={`px-6 py-4 whitespace-nowrap text-sm ${
-                                            timer.isRunning ? 'text-green-700 font-medium' : timer.isFake ? 'text-red-700' : 'text-gray-600'
-                                        }`}>
-                                            {new Date(timer.startTime).toLocaleString()}
-                                        </td>
-                                        <td className={`px-6 py-4 whitespace-nowrap text-sm ${
-                                            timer.isRunning ? 'text-green-700 font-medium' : timer.isFake ? 'text-red-700' : 'text-gray-600'
-                                        }`}>
-                                            {timer.status === 'running' ? (
-                                                <span className="flex items-center gap-2">
-                                                    <Activity className="w-4 h-4 animate-pulse" />
-                                                    <span className="font-semibold">Running...</span>
-                                                </span>
-                                            ) : (
-                                                new Date(timer.endTime).toLocaleString()
-                                            )}
-                                        </td>
-                                        <td className={`px-6 py-4 whitespace-nowrap text-sm font-bold ${
-                                            timer.isRunning ? 'text-green-600' : timer.isFake ? 'text-red-600' : 'text-gray-900'
-                                        }`}>
-                                            {timer.isRunning ? getElapsedTime(timer.startTime) : formatDuration(timer.duration)}
-                                            {timer.isFake && (
-                                                <span className="ml-2 text-xs text-red-500 font-normal">(Manual)</span>
-                                            )}
-                                        </td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-xs">
-                                            {timer.isFake ? (
-                                                <span className="text-red-600 font-bold bg-red-100 px-3 py-1 rounded-full">
-                                                    MANUAL FAKE
-                                                </span>
-                                            ) : (
-                                                <span className="text-gray-500 font-medium px-3 py-1 bg-gray-100 rounded-full">
-                                                    {timer.source}
-                                                </span>
-                                            )}
-                                        </td>
-                                    </tr>
-                                ))
-                            )}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
+      </div>
     );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-red-50 to-orange-50 p-8 flex items-center justify-center">
+        <div className="max-w-md w-full p-8 bg-white border-2 border-red-200 rounded-2xl shadow-2xl">
+          <div className="flex items-center justify-center w-16 h-16 bg-red-100 rounded-full mx-auto mb-4">
+            <AlertTriangle className="w-8 h-8 text-red-600" />
+          </div>
+          <h2 className="text-2xl font-bold mb-4 text-center text-gray-800">Authorization Error</h2>
+          <p className="text-gray-600 text-center mb-6">{error}</p>
+          <button
+            onClick={logout}
+            className="w-full px-6 py-3 bg-red-500 text-white rounded-xl shadow-lg hover:bg-red-600 transition duration-200 font-semibold flex items-center justify-center gap-2"
+          >
+            <LogOut className="w-5 h-5" />
+            Logout and Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 p-4 md:p-8 font-sans">
+      {/* Header */}
+      <header className="mb-8 pb-6 border-b-2 border-indigo-100">
+        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
+          <div>
+            <h1 className="text-4xl font-bold text-gray-800 flex items-center gap-3 mb-2">
+              <div className="p-2 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl shadow-lg">
+                <Clock className="w-8 h-8 text-white" />
+              </div>
+              Team Time Tracker
+            </h1>
+            <p className="text-gray-600 ml-16">Simplified tracking & analytics</p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3">
+            <label className="flex items-center gap-2 px-4 py-2 bg-white rounded-xl shadow-md text-sm text-gray-700 cursor-pointer hover:shadow-lg transition-shadow">
+              <input
+                type="checkbox"
+                checked={autoRefresh}
+                onChange={(e) => setAutoRefresh(e.target.checked)}
+                className="w-4 h-4 text-indigo-600 rounded focus:ring-2 focus:ring-indigo-500"
+              />
+              <Zap className="w-4 h-4 text-yellow-500" />
+              <span className="font-medium">Auto-refresh</span>
+            </label>
+
+            <button
+              onClick={fetchData}
+              disabled={apiStatus.loading}
+              className="flex items-center gap-2 px-5 py-2 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-xl shadow-lg hover:shadow-xl hover:scale-105 transition-all duration-200 text-sm font-semibold disabled:opacity-50"
+            >
+              <RefreshCw className={`w-4 h-4 ${apiStatus.loading ? 'animate-spin' : ''}`} />
+              Refresh
+            </button>
+
+            <Link href="/attendance">
+              <button className="flex items-center gap-2 px-5 py-2 bg-white text-gray-700 rounded-xl shadow-md hover:shadow-lg transition-all text-sm font-semibold">
+                <Calendar className="w-4 h-4" />
+                Active Hours
+              </button>
+            </Link>
+
+            <Link href="/running-timers">
+              <button className="flex items-center gap-2 px-5 py-2 bg-white text-gray-700 rounded-xl shadow-md hover:shadow-lg transition-all text-sm font-semibold">
+                <Activity className="w-4 h-4" />
+                Running Timers
+              </button>
+            </Link>
+
+            <button
+              onClick={logout}
+              className="flex items-center gap-2 px-5 py-2 bg-white text-gray-700 rounded-xl shadow-md hover:shadow-lg transition-all text-sm font-semibold"
+            >
+              <LogOut className="w-4 h-4" />
+              Logout
+            </button>
+          </div>
+        </div>
+      </header>
+
+      {/* Stats Cards */}
+      {stats && (
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+          <div className="bg-gradient-to-br from-green-500 to-emerald-600 rounded-2xl p-6 shadow-xl text-white">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm font-medium opacity-90">Active Timers</span>
+              <Activity className="w-5 h-5 animate-pulse" />
+            </div>
+            <div className="text-4xl font-bold">{runningTimers.length}</div>
+            <div className="text-xs opacity-75 mt-1">{formatDuration(totalActiveTime)} total</div>
+          </div>
+
+          <div className="bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl p-6 shadow-xl text-white">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm font-medium opacity-90">Total Entries</span>
+              <TrendingUp className="w-5 h-5" />
+            </div>
+            <div className="text-4xl font-bold">{stats.totalEntries}</div>
+            <div className="text-xs opacity-75 mt-1">{stats.totalHours}h tracked</div>
+          </div>
+
+          <div className="bg-gradient-to-br from-purple-500 to-pink-600 rounded-2xl p-6 shadow-xl text-white">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm font-medium opacity-90">Team Members</span>
+              <Users className="w-5 h-5" />
+            </div>
+            <div className="text-4xl font-bold">{stats.uniqueUsers}</div>
+            <div className="text-xs opacity-75 mt-1">Active users</div>
+          </div>
+
+          {/* ✅ NEW: Fake Timers Stats Card */}
+          <div className="bg-gradient-to-br from-red-500 to-orange-600 rounded-2xl p-6 shadow-xl text-white">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm font-medium opacity-90">Manual Entries</span>
+              <AlertTriangle className="w-5 h-5" />
+            </div>
+            <div className="text-4xl font-bold">{stats.fakeEntries || 0}</div>
+            <div className="text-xs opacity-75 mt-1">
+              {stats.mobileEntries || 0} mobile • {stats.desktopEntries || 0} desktop
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Filters */}
+      <div className="bg-white rounded-2xl shadow-lg p-6 mb-8 border border-gray-100">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
+            <Filter className="w-5 h-5 text-indigo-500" />
+            Filters
+          </h3>
+          {(selectedUsers.length > 0 || selectedFolders.length > 0 || searchQuery) && (
+            <button
+              onClick={clearFilters}
+              className="flex items-center gap-2 px-3 py-1 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition text-sm font-medium"
+            >
+              <X className="w-4 h-4" />
+              Clear All
+            </button>
+          )}
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          {/* Date Range */}
+          <div>
+            <label className="text-sm font-semibold text-gray-700 mb-2 block flex items-center gap-2">
+              <Calendar className="w-4 h-4 text-indigo-500" />
+              Date Range
+            </label>
+            <select
+              value={selectedDays}
+              onChange={(e) => setSelectedDays(Number(e.target.value))}
+              className="w-full p-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-gray-50 hover:bg-white transition"
+            >
+              {DATE_FILTERS.map(filter => (
+                <option key={filter.value} value={filter.value}>{filter.label}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Search */}
+          <div>
+            <label className="text-sm font-semibold text-gray-700 mb-2 block flex items-center gap-2">
+              <Search className="w-4 h-4 text-indigo-500" />
+              Search
+            </label>
+            <input
+              type="text"
+              placeholder="Search user or task..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full p-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-gray-50 hover:bg-white transition"
+            />
+          </div>
+
+          {/* Users */}
+          <div>
+            <label className="text-sm font-semibold text-gray-700 mb-2 block flex items-center gap-2">
+              <Users className="w-4 h-4 text-indigo-500" />
+              Users ({selectedUsers.length > 0 ? selectedUsers.length : 'All'})
+            </label>
+            <div className="border-2 border-gray-200 rounded-xl p-3 bg-gray-50 max-h-32 overflow-y-auto">
+              {availableUsers.length === 0 ? (
+                <p className="text-sm text-gray-500">No users available</p>
+              ) : (
+                availableUsers.map(user => (
+                  <label key={user.id} className="flex items-center gap-2 py-1 hover:bg-white px-2 rounded cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={selectedUsers.includes(user.id)}
+                      onChange={() => toggleUserSelection(user.id)}
+                      className="w-4 h-4 text-indigo-600 rounded focus:ring-2 focus:ring-indigo-500"
+                    />
+                    <span className="text-sm text-gray-700">{user.name}</span>
+                  </label>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Active Filters Display */}
+        {(selectedUsers.length > 0 || selectedFolders.length > 0) && (
+          <div className="mt-4 flex flex-wrap gap-2">
+            {selectedUsers.map(userId => {
+              const user = availableUsers.find(u => u.id === userId);
+              return (
+                <span key={userId} className="px-3 py-1 bg-indigo-100 text-indigo-700 rounded-full text-sm font-medium flex items-center gap-2">
+                  <User className="w-3 h-3" />
+                  {user?.name}
+                  <button onClick={() => toggleUserSelection(userId)} className="hover:bg-indigo-200 rounded-full p-0.5">
+                    <X className="w-3 h-3" />
+                  </button>
+                </span>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Running Timers */}
+      {runningTimers.length > 0 && (
+        <div className="mb-8">
+          <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-3 mb-4">
+            <div className="relative">
+              <Activity className="w-7 h-7 text-green-600 animate-pulse" />
+              <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full animate-ping"></span>
+            </div>
+            Live Activity
+            <span className="text-lg font-normal text-gray-500">
+              ({runningTimers.length} active)
+            </span>
+          </h2>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
+            {runningTimers.map((timer, index) => {
+              const badge = getDeviceBadge(timer);
+              return (
+                <div
+                  key={`running_${timer.taskId}_${timer.userId}_${index}`}
+                  className={`rounded-xl shadow-xl p-4 border transition-all ${
+                    timer.isFake
+                      ? 'bg-gradient-to-br from-red-900 via-red-800 to-red-900 border-red-400/30'
+                      : 'bg-gradient-to-br from-gray-900 via-[#111827] to-[#1e2a4a] border-green-400/30 hover:border-green-400/50'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <div className={`w-2 h-2 rounded-full animate-pulse ${timer.isFake ? 'bg-red-400' : 'bg-green-400'}`}></div>
+                      <span className={`text-xs font-bold uppercase tracking-wide ${timer.isFake ? 'text-red-400' : 'text-green-400'}`}>
+                        {timer.isFake ? 'Manual' : 'Live'}
+                      </span>
+                    </div>
+                    <div className="bg-black/30 backdrop-blur-sm px-3 py-1 rounded-lg border border-green-500/20">
+                      <span className="text-white font-mono font-bold text-sm">
+                        {getElapsedTime(timer.startTime)}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3 mb-3 pb-3 border-b border-gray-700">
+                    <div className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold text-sm shadow-lg">
+                      {timer.user.charAt(0).toUpperCase()}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-semibold text-white text-sm truncate">{timer.user}</div>
+                      <div className="text-xs text-gray-400">{timer.folderName}</div>
+                    </div>
+                  </div>
+
+                  <div className="mb-2">
+                    {timer.taskUrl ? (
+                      <a
+                        href={timer.taskUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-indigo-300 hover:text-indigo-200 font-medium text-sm flex items-center gap-1 group"
+                      >
+                        <span className="line-clamp-2">{timer.taskName}</span>
+                        <ExternalLink className="w-3 h-3 flex-shrink-0 opacity-0 group-hover:opacity-100 transition" />
+                      </a>
+                    ) : (
+                      <p className="text-gray-300 text-sm line-clamp-2">{timer.taskName}</p>
+                    )}
+                  </div>
+
+                  <div className="flex items-center justify-between pt-2 border-t border-gray-700">
+                    <span className={`px-2 py-1 rounded text-xs font-semibold flex items-center gap-1 ${badge.className}`}>
+                      {badge.icon}
+                      {badge.label}
+                    </span>
+                    <div className="text-xs text-gray-400">
+                      Started {new Date(timer.startTime).toLocaleTimeString()}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Summary */}
+      <div className="bg-white rounded-2xl shadow-lg p-6 mb-6 border border-gray-100">
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-sm text-gray-500 font-medium">Filtered Time</div>
+            <div className="text-3xl font-bold text-indigo-600">{formatDuration(totalFilteredTime)}</div>
+            <div className="text-sm text-gray-600 mt-1">
+              {filteredData.length} entries • Last {selectedDays} {selectedDays === 1 ? 'day' : 'days'}
+            </div>
+          </div>
+          {apiStatus.loading && (
+            <div className="flex items-center gap-2 px-4 py-2 bg-indigo-50 text-indigo-600 rounded-xl">
+              <RefreshCw className="w-4 h-4 animate-spin" />
+              <span className="text-sm font-medium">Loading...</span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Time Entries Table */}
+      <div className="bg-white rounded-2xl shadow-lg overflow-hidden border border-gray-100">
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gradient-to-r from-gray-50 to-gray-100">
+              <tr>
+                <th className="px-6 py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">User</th>
+                <th className="px-6 py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">Task</th>
+                <th className="px-6 py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">Start</th>
+                <th className="px-6 py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">Duration</th>
+                <th className="px-6 py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">Device</th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-100">
+              {filteredData.length === 0 ? (
+                <tr>
+                  <td colSpan="5" className="px-6 py-12 text-center">
+                    <div className="flex flex-col items-center gap-3">
+                      <Clock className="w-12 h-12 text-gray-400" />
+                      <p className="text-gray-600 font-medium">No entries found</p>
+                      <p className="text-sm text-gray-500">Try adjusting your filters</p>
+                    </div>
+                  </td>
+                </tr>
+              ) : (
+                filteredData.map((timer, index) => {
+                  const badge = getDeviceBadge(timer);
+                  return (
+                    <tr
+                      key={`${timer.taskId}_${timer.userId}_${index}`}
+                      className={`hover:bg-gray-50 transition ${timer.isFake ? 'bg-red-50 border-l-4 border-l-red-400' : ''}`}
+                    >
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-full flex items-center justify-center text-white text-xs font-bold shadow">
+                            {timer.user.charAt(0).toUpperCase()}
+                          </div>
+                          <span className="text-sm font-medium text-gray-900">{timer.user}</span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 max-w-xs">
+                        {timer.taskUrl ? (
+                          <a
+                            href={timer.taskUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className={`font-medium text-sm hover:underline flex items-center gap-1 ${
+                              timer.isFake ? 'text-red-600 hover:text-red-800' : 'text-indigo-600 hover:text-indigo-800'
+                            }`}
+                          >
+                            <span className="truncate">{timer.taskName}</span>
+                            <ExternalLink className="w-3 h-3 flex-shrink-0" />
+                          </a>
+                        ) : (
+                          <span className={`text-sm font-medium truncate block ${timer.isFake ? 'text-red-600' : 'text-gray-700'}`}>
+                            {timer.taskName}
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                        {new Date(timer.startTime).toLocaleString()}
+                      </td>
+                      <td className={`px-6 py-4 whitespace-nowrap text-sm font-bold ${timer.isFake ? 'text-red-600' : 'text-gray-900'}`}>
+                        {formatDuration(timer.duration)}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-xs">
+                        <span className={`font-bold px-3 py-1 rounded-full flex items-center gap-1 w-fit ${badge.className}`}>
+                          {badge.icon}
+                          {badge.label}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
 }
