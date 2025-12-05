@@ -376,6 +376,7 @@ export async function GET(request) {
       currentUserMember.user.role === 1    // Owner role ID
     );
 
+    // console.log(isAdmin,"role")
     // Fetch time entries based on role
     const allTimeEntries = [];
 
