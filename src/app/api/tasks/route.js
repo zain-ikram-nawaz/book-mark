@@ -5,21 +5,13 @@ function detectFakeTime(entry) {
   const start = Number(entry.start);
   const end = Number(entry.end);
 
-  // ✅ KEY DETECTION: Check if timestamps end with 000 (rounded to seconds)
-  // Real timers have millisecond precision, fake timers are rounded
   const startEndsWithZeros = start % 1000 === 0;
   const endEndsWithZeros = end % 1000 === 0;
   const bothTimestampsRounded = startEndsWithZeros && endEndsWithZeros;
 
-  // Manual source detection
   const isManualSource = src === "clickup" || src === "manual";
-
-  // ✅ MAIN FAKE DETECTION LOGIC:
-  // 1. Manual source = definitely fake
-  // 2. Both timestamps rounded to seconds (no milliseconds) = fake
   const isFake = isManualSource || bothTimestampsRounded;
 
-  // Device type detection
   const isMobile = src === "clickup_mobile" || src === "mobile" || src === "android" || src === "ios";
   const isDesktop = src === "clickup_automatic" || src.includes("automatic");
 
@@ -40,32 +32,43 @@ export async function GET(request) {
   const token = authHeader?.split(" ")[1];
 
   const { searchParams } = new URL(request.url);
-  const teamId = process.env.TEAM_ID;
 
-  // Get date range from query params (default: last 3 days)
   const daysParam = searchParams.get("days") || "3";
   const days = parseInt(daysParam);
-
-  console.log(`\n${'='.repeat(60)}`);
-  console.log(`🚀 TEAM TIME DATA - Last ${days} days`);
-  console.log(`${'='.repeat(60)}`);
 
   if (!token) {
     return NextResponse.json({ error: "Missing token" }, { status: 401 });
   }
 
-  if (!teamId) {
-    return NextResponse.json({ error: "TEAM_ID missing" }, { status: 500 });
-  }
-
   try {
+    // Fetch user's workspaces dynamically
+    const workspacesRes = await fetch('https://api.clickup.com/api/v2/team', {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+
+    if (!workspacesRes.ok) {
+      const errorData = await workspacesRes.json();
+      return NextResponse.json({
+        error: "Failed to fetch workspaces",
+        details: errorData
+      }, { status: workspacesRes.status });
+    }
+
+    const workspacesData = await workspacesRes.json();
+
+    if (!workspacesData.teams || workspacesData.teams.length === 0) {
+      return NextResponse.json({
+        error: "No workspaces found for this user"
+      }, { status: 404 });
+    }
+
+    const teamId = workspacesData.teams[0].id;
+
     // Calculate date range
     const now = new Date();
     const startDate = new Date();
     startDate.setDate(now.getDate() - days);
     startDate.setHours(0, 0, 0, 0);
-
-    console.log(`📅 Fetching data from ${startDate.toLocaleDateString()} to ${now.toLocaleDateString()}`);
 
     // Fetch team members
     const membersRes = await fetch(`https://api.clickup.com/api/v2/team/${teamId}`, {
@@ -82,8 +85,6 @@ export async function GET(request) {
 
     const membersData = await membersRes.json();
     const members = membersData.team?.members || [];
-
-    console.log(`✅ Found ${members.length} team members`);
 
     if (members.length === 0) {
       return NextResponse.json({
@@ -102,7 +103,6 @@ export async function GET(request) {
 
       const batchPromises = memberBatch.map(async (member) => {
         const userId = member.user.id;
-        const username = member.user.username || member.user.email;
         const apiUrl = `https://api.clickup.com/api/v2/team/${teamId}/time_entries?subtasks=true&start_date=${startDate.getTime()}&assignee=${userId}`;
 
         try {
@@ -113,14 +113,11 @@ export async function GET(request) {
           const data = await res.json();
 
           if (res.ok && Array.isArray(data.data)) {
-            console.log(`  ✓ ${username}: ${data.data.length} entries`);
             return data.data;
           } else {
-            console.error(`  ✗ ${username}: Failed`);
             return [];
           }
         } catch (err) {
-          console.error(`  ✗ ${username}: ${err.message}`);
           return [];
         }
       });
@@ -128,8 +125,6 @@ export async function GET(request) {
       const batchResults = await Promise.all(batchPromises);
       batchResults.forEach(entries => allTimeEntries.push(...entries));
     }
-
-    console.log(`\n📊 Total time entries fetched: ${allTimeEntries.length}`);
 
     if (allTimeEntries.length === 0) {
       return NextResponse.json({
@@ -180,31 +175,10 @@ export async function GET(request) {
     const runningTimers = processedTimers.filter(t => t.isRunning);
     const stoppedTimers = processedTimers.filter(t => !t.isRunning);
 
-    console.log(`🏃 Running timers: ${runningTimers.length}`);
-    console.log(`⏹️  Stopped timers: ${stoppedTimers.length}`);
-
-    // ✅ Filter timers by type
+    // Filter timers by type
     const fakeTimers = processedTimers.filter(t => t.isFake);
     const mobileTimers = processedTimers.filter(t => t.isMobile && !t.isFake);
     const desktopTimers = processedTimers.filter(t => t.isDesktop && !t.isFake);
-
-    // ✅ Console log ONLY FAKE TIMERS
-    if (fakeTimers.length > 0) {
-      console.log(`\n${'='.repeat(70)}`);
-      console.log(`🚨 FAKE/MANUAL TIMERS DETECTED: ${fakeTimers.length}`);
-      console.log(`${'='.repeat(70)}`);
-
-      fakeTimers.forEach((timer, index) => {
-        console.log(`\n[${index + 1}] 🔴 FAKE TIMER`);
-        console.log(`   👤 User: ${timer.user}`);
-        console.log(`   📋 Task: ${timer.taskName}`);
-        console.log(`   ⏱️  Duration: ${(timer.duration / (1000 * 60)).toFixed(2)} min`);
-        console.log(`   🕐 Start: ${timer.startFormatted}`);
-        console.log(`   🕑 End: ${timer.endFormatted}`);
-        console.log(`   📱 Source: ${timer.source}`);
-        console.log(`   🖥️  Device: ${timer.deviceType}`);
-      });
-    }
 
     // Get unique users and folders for filters
     const uniqueUsers = [...new Set(processedTimers.map(t => JSON.stringify({ id: t.userId, name: t.user })))]
@@ -231,8 +205,6 @@ export async function GET(request) {
     };
 
     const totalTime = Date.now() - requestStartTime;
-    console.log(`\n⏱️  TOTAL REQUEST TIME: ${totalTime}ms`);
-    console.log(`${'='.repeat(60)}\n`);
 
     return NextResponse.json({
       success: true,
@@ -254,9 +226,7 @@ export async function GET(request) {
     });
 
   } catch (err) {
-    console.error('❌ Error in team-time API:', err);
     const totalTime = Date.now() - requestStartTime;
-    console.log(`\n⏱️  Failed after: ${totalTime}ms`);
 
     return NextResponse.json({
       error: err.message,

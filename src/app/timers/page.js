@@ -322,7 +322,7 @@ export default function SimplifiedTimerApp() {
               <div className="p-2 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl shadow-lg">
                 <Clock className="w-8 h-8 text-white" />
               </div>
-              Team Time Tracker
+              Team Time Tracker.
             </h1>
             <p className="text-gray-600 ml-16">Simplified tracking & analytics</p>
           </div>
