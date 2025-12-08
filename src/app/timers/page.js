@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { RefreshCw, LogOut, Clock, User, TrendingUp, AlertTriangle, Calendar, Activity, Zap, ExternalLink, Folder, Users, Filter, X, Search, Smartphone, Monitor } from 'lucide-react';
+import { RefreshCw, LogOut, Clock, User, TrendingUp, AlertTriangle, Calendar, Activity, Zap, ExternalLink, Folder, Users, Filter, X, Search, Smartphone, Monitor, Download } from 'lucide-react';
 import Link from 'next/link';
 
 const ACCESS_TOKEN_KEY = 'clickup_access_token';
@@ -17,6 +17,14 @@ const DATE_FILTERS = [
   { value: 30, label: 'Last Month', days: 30 },
 ];
 
+const DEVICE_FILTERS = [
+  { value: 'all', label: 'All Devices' },
+  { value: 'real', label: 'Real Only (Mobile + Desktop)' },
+  { value: 'fake', label: 'Manual Only' },
+  { value: 'mobile', label: 'Mobile Only' },
+  { value: 'desktop', label: 'Desktop Only' },
+];
+
 const formatDuration = (ms) => {
   const totalSeconds = Math.floor(ms / 1000);
   const hours = Math.floor(totalSeconds / 3600);
@@ -24,6 +32,63 @@ const formatDuration = (ms) => {
   const seconds = totalSeconds % 60;
   const pad = (num) => String(num).padStart(2, '0');
   return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
+};
+
+// ✅ CSV Export Function
+const exportToCSV = (data, filename = 'time_entries.csv') => {
+  if (!data || data.length === 0) {
+    alert('No data to export');
+    return;
+  }
+
+  // CSV Headers
+  const headers = [
+    'User',
+    'Task Name',
+    'Folder',
+    'Start Time',
+    'End Time',
+    'Duration (HH:MM:SS)',
+    'Duration (Hours)',
+    'Device Type',
+    'Source',
+    'Status',
+    'Task URL'
+  ];
+
+  // Convert data to CSV rows
+  const rows = data.map(timer => [
+    timer.user,
+    timer.taskName,
+    timer.folderName,
+    timer.startFormatted,
+    timer.endFormatted,
+    formatDuration(timer.duration),
+    (timer.duration / (1000 * 60 * 60)).toFixed(2),
+    timer.deviceType,
+    timer.source,
+    timer.status,
+    timer.taskUrl || ''
+  ]);
+
+  // Combine headers and rows
+  const csvContent = [
+    headers.join(','),
+    ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
+  ].join('\n');
+
+  // Create blob and download
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const link = document.createElement('a');
+  const url = URL.createObjectURL(blob);
+
+  link.setAttribute('href', url);
+  link.setAttribute('download', filename);
+  link.style.visibility = 'hidden';
+
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
 };
 
 // ✅ Get device type badge styling
@@ -134,6 +199,7 @@ export default function SimplifiedTimerApp() {
   const [selectedDays, setSelectedDays] = useState(3);
   const [selectedUsers, setSelectedUsers] = useState([]);
   const [selectedFolders, setSelectedFolders] = useState([]);
+  const [selectedDeviceFilter, setSelectedDeviceFilter] = useState('all'); // ✅ NEW
   const [searchQuery, setSearchQuery] = useState('');
 
   const [apiStatus, setApiStatus] = useState({ loading: false, error: null });
@@ -157,9 +223,6 @@ export default function SimplifiedTimerApp() {
     const { ok, data, error } = await authorizedFetch(`/api/tasks?days=${selectedDays}`);
 
     if (ok) {
-      console.log('✅ Data received:', data);
-      console.log('🏃 Running timers:', data.runningTimers);
-
       setAllData(data.data || []);
       setRunningTimers(data.runningTimers || []);
       setAvailableUsers(data.filters?.users || []);
@@ -221,6 +284,24 @@ export default function SimplifiedTimerApp() {
       filtered = filtered.filter(item => item.startTime >= dateFilterStart);
     }
 
+    // ✅ Device Filter
+    if (selectedDeviceFilter !== 'all') {
+      filtered = filtered.filter(item => {
+        switch(selectedDeviceFilter) {
+          case 'real':
+            return item.isReal;
+          case 'fake':
+            return item.isFake;
+          case 'mobile':
+            return item.isMobile && !item.isFake;
+          case 'desktop':
+            return item.isDesktop && !item.isFake;
+          default:
+            return true;
+        }
+      });
+    }
+
     if (selectedUsers.length > 0) {
       filtered = filtered.filter(item => selectedUsers.includes(item.userId));
     }
@@ -244,7 +325,7 @@ export default function SimplifiedTimerApp() {
     filtered.sort((a, b) => b.startTime - a.startTime);
 
     setFilteredData(filtered);
-  }, [allData, selectedUsers, selectedFolders, searchQuery, selectedDays]);
+  }, [allData, selectedUsers, selectedFolders, selectedDeviceFilter, searchQuery, selectedDays]);
 
   const getElapsedTime = (startTime) => {
     const elapsed = currentTime - startTime;
@@ -277,7 +358,15 @@ export default function SimplifiedTimerApp() {
   const clearFilters = () => {
     setSelectedUsers([]);
     setSelectedFolders([]);
+    setSelectedDeviceFilter('all');
     setSearchQuery('');
+  };
+
+  // ✅ Export Handler
+  const handleExportCSV = () => {
+    const timestamp = new Date().toISOString().split('T')[0];
+    const filename = `time_entries_${timestamp}.csv`;
+    exportToCSV(filteredData, filename);
   };
 
   if (loading) {
@@ -348,6 +437,16 @@ export default function SimplifiedTimerApp() {
               Refresh
             </button>
 
+            {/* ✅ Export CSV Button */}
+            <button
+              onClick={handleExportCSV}
+              disabled={filteredData.length === 0}
+              className="flex items-center gap-2 px-5 py-2 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl shadow-lg hover:shadow-xl hover:scale-105 transition-all duration-200 text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Download className="w-4 h-4" />
+              Export CSV
+            </button>
+
             <Link href="/attendance">
               <button className="flex items-center gap-2 px-5 py-2 bg-white text-gray-700 rounded-xl shadow-md hover:shadow-lg transition-all text-sm font-semibold">
                 <Calendar className="w-4 h-4" />
@@ -403,7 +502,6 @@ export default function SimplifiedTimerApp() {
             <div className="text-xs opacity-75 mt-1">Active users</div>
           </div>
 
-          {/* ✅ NEW: Fake Timers Stats Card */}
           <div className="bg-gradient-to-br from-red-500 to-orange-600 rounded-2xl p-6 shadow-xl text-white">
             <div className="flex items-center justify-between mb-2">
               <span className="text-sm font-medium opacity-90">Manual Entries</span>
@@ -424,7 +522,7 @@ export default function SimplifiedTimerApp() {
             <Filter className="w-5 h-5 text-indigo-500" />
             Filters
           </h3>
-          {(selectedUsers.length > 0 || selectedFolders.length > 0 || searchQuery) && (
+          {(selectedUsers.length > 0 || selectedFolders.length > 0 || selectedDeviceFilter !== 'all' || searchQuery) && (
             <button
               onClick={clearFilters}
               className="flex items-center gap-2 px-3 py-1 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition text-sm font-medium"
@@ -448,6 +546,23 @@ export default function SimplifiedTimerApp() {
               className="w-full p-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-gray-50 hover:bg-white transition"
             >
               {DATE_FILTERS.map(filter => (
+                <option key={filter.value} value={filter.value}>{filter.label}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* ✅ Device Filter */}
+          <div>
+            <label className="text-sm font-semibold text-gray-700 mb-2 block flex items-center gap-2">
+              <Monitor className="w-4 h-4 text-indigo-500" />
+              Device Type
+            </label>
+            <select
+              value={selectedDeviceFilter}
+              onChange={(e) => setSelectedDeviceFilter(e.target.value)}
+              className="w-full p-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-gray-50 hover:bg-white transition"
+            >
+              {DEVICE_FILTERS.map(filter => (
                 <option key={filter.value} value={filter.value}>{filter.label}</option>
               ))}
             </select>
@@ -495,8 +610,17 @@ export default function SimplifiedTimerApp() {
         </div>
 
         {/* Active Filters Display */}
-        {(selectedUsers.length > 0 || selectedFolders.length > 0) && (
+        {(selectedUsers.length > 0 || selectedFolders.length > 0 || selectedDeviceFilter !== 'all') && (
           <div className="mt-4 flex flex-wrap gap-2">
+            {selectedDeviceFilter !== 'all' && (
+              <span className="px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-sm font-medium flex items-center gap-2">
+                <Monitor className="w-3 h-3" />
+                {DEVICE_FILTERS.find(f => f.value === selectedDeviceFilter)?.label}
+                <button onClick={() => setSelectedDeviceFilter('all')} className="hover:bg-purple-200 rounded-full p-0.5">
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            )}
             {selectedUsers.map(userId => {
               const user = availableUsers.find(u => u.id === userId);
               return (

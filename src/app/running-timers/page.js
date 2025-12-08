@@ -104,7 +104,7 @@ export default function RunningTimersPage() {
   const [runningTimers, setRunningTimers] = useState([]);
   const [stats, setStats] = useState(null);
   const [apiStatus, setApiStatus] = useState({ loading: false, error: null });
-  const [autoRefresh, setAutoRefresh] = useState(true);
+  const [autoRefresh, setAutoRefresh] = useState(false);
   const [currentTime, setCurrentTime] = useState(Date.now());
 
   // Update current time every second
