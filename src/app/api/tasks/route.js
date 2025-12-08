@@ -302,18 +302,28 @@ export async function GET(request) {
   const daysParam = searchParams.get("days") || "3";
   const days = parseInt(daysParam);
 
+  console.log("\n========== API REQUEST START ==========");
+  console.log("Days param:", days);
+
   if (!token) {
+    console.log("❌ No token provided");
     return NextResponse.json({ error: "Missing token" }, { status: 401 });
   }
 
+  console.log("✅ Token received");
+
   try {
     // Fetch user's workspaces dynamically
+    console.log("\n--- Fetching Workspaces ---");
     const workspacesRes = await fetch('https://api.clickup.com/api/v2/team', {
       headers: { Authorization: `Bearer ${token}` }
     });
 
+    console.log("Workspaces API Status:", workspacesRes.status);
+
     if (!workspacesRes.ok) {
       const errorData = await workspacesRes.json();
+      console.log("❌ Workspaces Error:", JSON.stringify(errorData, null, 2));
       return NextResponse.json({
         error: "Failed to fetch workspaces",
         details: errorData
@@ -321,21 +331,38 @@ export async function GET(request) {
     }
 
     const workspacesData = await workspacesRes.json();
+    console.log("Workspaces Data:", JSON.stringify(workspacesData, null, 2));
 
     if (!workspacesData.teams || workspacesData.teams.length === 0) {
+      console.log("❌ No workspaces found");
       return NextResponse.json({
         error: "No workspaces found for this user"
       }, { status: 404 });
     }
 
-    const teamId = workspacesData.teams[0].id;
+    // Select workspace with members (active workspace)
+    const activeWorkspace = workspacesData.teams.find(team =>
+      team.members && team.members.length > 0
+    ) || workspacesData.teams[0];
+
+    const teamId = activeWorkspace.id;
+    console.log("✅ Selected Workspace:", activeWorkspace.name);
+    console.log("✅ Team ID:", teamId);
 
     // Get current user info
+    console.log("\n--- Fetching User Info ---");
     const userRes = await fetch('https://api.clickup.com/api/v2/user', {
       headers: { Authorization: `Bearer ${token}` }
     });
+
+    console.log("User API Status:", userRes.status);
+
     const userData = await userRes.json();
+    console.log("User Data:", JSON.stringify(userData, null, 2));
+
     const currentUserId = userData.user.id;
+    console.log("✅ Current User ID:", currentUserId);
+    console.log("✅ Current User Name:", userData.user.username || userData.user.email);
 
     // Calculate date range
     const now = new Date();
@@ -343,13 +370,22 @@ export async function GET(request) {
     startDate.setDate(now.getDate() - days);
     startDate.setHours(0, 0, 0, 0);
 
+    console.log("\n--- Date Range ---");
+    console.log("Start Date:", startDate.toISOString());
+    console.log("End Date:", now.toISOString());
+    console.log("Start Timestamp:", startDate.getTime());
+
     // Fetch team members to check user role
+    console.log("\n--- Fetching Team Members ---");
     const membersRes = await fetch(`https://api.clickup.com/api/v2/team/${teamId}`, {
       headers: { Authorization: `Bearer ${token}` }
     });
 
+    console.log("Members API Status:", membersRes.status);
+
     if (!membersRes.ok) {
       const errorData = await membersRes.json();
+      console.log("❌ Members Error:", JSON.stringify(errorData, null, 2));
       return NextResponse.json({
         error: "Failed to fetch team members",
         details: errorData
@@ -357,39 +393,45 @@ export async function GET(request) {
     }
 
     const membersData = await membersRes.json();
-    const members = membersData.team?.members || [];
+    console.log("Members Count:", membersData.team?.members?.length || 0);
 
-    if (members.length === 0) {
-      return NextResponse.json({
-        data: [],
-        runningTimers: [],
-        message: "No team members found"
-      });
-    }
+    const members = membersData.team?.members || [];
 
     // Check if current user is admin or owner
     const currentUserMember = members.find(m => m.user.id === currentUserId);
+    console.log("\n--- User Role Check ---");
+    console.log("Current User Member Data:", JSON.stringify(currentUserMember, null, 2));
+
     const isAdmin = currentUserMember && (
       currentUserMember.user.role === 'admin' ||
       currentUserMember.user.role === 'owner' ||
-      currentUserMember.user.role === 2 || // Admin role ID
-      currentUserMember.user.role === 1    // Owner role ID
+      currentUserMember.user.role === 2 ||
+      currentUserMember.user.role === 1
     );
 
-    // console.log(isAdmin,"role")
+    const isGuest = !currentUserMember || currentUserMember.user.role === 3 || currentUserMember.user.role === 'guest';
+
+    console.log("✅ Is Admin:", isAdmin);
+    console.log("✅ Is Guest:", isGuest);
+    console.log("User Role:", currentUserMember?.user?.role || 'guest');
+
     // Fetch time entries based on role
     const allTimeEntries = [];
 
     if (isAdmin) {
-      // Admin: Fetch all members' time entries
+      console.log("\n--- ADMIN MODE: Fetching All Members' Time Entries ---");
       const memberBatchSize = 10;
 
       for (let i = 0; i < members.length; i += memberBatchSize) {
         const memberBatch = members.slice(i, i + memberBatchSize);
+        console.log(`Processing batch ${Math.floor(i / memberBatchSize) + 1} (${memberBatch.length} members)`);
 
         const batchPromises = memberBatch.map(async (member) => {
           const userId = member.user.id;
+          const username = member.user.username || member.user.email;
           const apiUrl = `https://api.clickup.com/api/v2/team/${teamId}/time_entries?subtasks=true&start_date=${startDate.getTime()}&assignee=${userId}`;
+
+          console.log(`  Fetching for user: ${username} (ID: ${userId})`);
 
           try {
             const res = await fetch(apiUrl, {
@@ -399,11 +441,14 @@ export async function GET(request) {
             const data = await res.json();
 
             if (res.ok && Array.isArray(data.data)) {
+              console.log(`  ✅ ${username}: ${data.data.length} entries`);
               return data.data;
             } else {
+              console.log(`  ❌ ${username}: Failed -`, JSON.stringify(data, null, 2));
               return [];
             }
           } catch (err) {
+            console.log(`  ❌ ${username}: Error -`, err.message);
             return [];
           }
         });
@@ -411,32 +456,104 @@ export async function GET(request) {
         const batchResults = await Promise.all(batchPromises);
         batchResults.forEach(entries => allTimeEntries.push(...entries));
       }
+
+      console.log(`\n✅ Total entries fetched (Admin): ${allTimeEntries.length}`);
+
     } else {
-      // Normal user: Fetch only their own time entries
-      const apiUrl = `https://api.clickup.com/api/v2/team/${teamId}/time_entries?subtasks=true&start_date=${startDate.getTime()}&assignee=${currentUserId}`;
+      console.log("\n--- NORMAL/GUEST USER MODE: Fetching Own Time Entries ---");
+
+      // ✅ Approach 1: Try direct assignee query
+      console.log("\n🔍 Attempt 1: Direct assignee query");
+      const apiUrl1 = `https://api.clickup.com/api/v2/team/${teamId}/time_entries?assignee=${currentUserId}&start_date=${startDate.getTime()}`;
+      console.log("API URL:", apiUrl1);
 
       try {
-        const res = await fetch(apiUrl, {
+        const res = await fetch(apiUrl1, {
           headers: { Authorization: `Bearer ${token}` }
         });
 
+        console.log("Response Status:", res.status);
         const data = await res.json();
+        console.log("Response Data:", JSON.stringify(data, null, 2));
 
         if (res.ok && Array.isArray(data.data)) {
+          console.log(`✅ Entries found: ${data.data.length}`);
           allTimeEntries.push(...data.data);
+        } else {
+          console.log("❌ No data or error in response");
         }
       } catch (err) {
-        // Handle error silently
+        console.log("❌ Fetch Error:", err.message);
       }
+
+      // ✅ Approach 2: If no data, try fetching from accessible spaces
+      if (allTimeEntries.length === 0) {
+        console.log("\n🔍 Attempt 2: Fetching from accessible spaces");
+
+        try {
+          const spacesRes = await fetch(`https://api.clickup.com/api/v2/team/${teamId}/space?archived=false`, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+
+          console.log("Spaces API Status:", spacesRes.status);
+          const spacesData = await spacesRes.json();
+          console.log("Accessible Spaces Count:", spacesData.spaces?.length || 0);
+
+          if (spacesData.spaces && spacesData.spaces.length > 0) {
+            console.log(`✅ Found ${spacesData.spaces.length} accessible spaces`);
+
+            // Fetch time entries from each space
+            for (const space of spacesData.spaces) {
+              console.log(`  Fetching from space: ${space.name} (ID: ${space.id})`);
+
+              const spaceTimeUrl = `https://api.clickup.com/api/v2/team/${teamId}/time_entries?space_id=${space.id}&assignee=${currentUserId}&start_date=${startDate.getTime()}`;
+
+              try {
+                const res = await fetch(spaceTimeUrl, {
+                  headers: { Authorization: `Bearer ${token}` }
+                });
+
+                const data = await res.json();
+                console.log(`  Space "${space.name}": Status ${res.status}, Entries: ${data.data?.length || 0}`);
+
+                if (res.ok && Array.isArray(data.data)) {
+                  allTimeEntries.push(...data.data);
+                }
+              } catch (err) {
+                console.log(`  ❌ Error fetching from space ${space.name}:`, err.message);
+              }
+            }
+          } else {
+            console.log("❌ No accessible spaces found");
+          }
+        } catch (err) {
+          console.log("❌ Error fetching spaces:", err.message);
+        }
+      }
+
+      console.log(`\n✅ Total entries fetched (Normal/Guest User): ${allTimeEntries.length}`);
     }
 
     if (allTimeEntries.length === 0) {
+      console.log("\n⚠️ No time entries found - returning empty response");
       return NextResponse.json({
         data: [],
         runningTimers: [],
-        message: "No time entries found"
+        message: "No time entries found",
+        debug: {
+          userId: currentUserId,
+          teamId: teamId,
+          isAdmin: isAdmin,
+          isGuest: isGuest,
+          dateRange: {
+            start: startDate.toISOString(),
+            end: now.toISOString()
+          }
+        }
       });
     }
+
+    console.log("\n--- Processing Time Entries ---");
 
     // Process all time entries
     const processedTimers = allTimeEntries.map(entry => {
@@ -475,13 +592,20 @@ export async function GET(request) {
       };
     });
 
+    console.log(`✅ Processed ${processedTimers.length} timers`);
+
     // Separate running and stopped timers
     const runningTimers = processedTimers.filter(t => t.isRunning);
+    console.log(`Running timers: ${runningTimers.length}`);
 
     // Filter timers by type
     const fakeTimers = processedTimers.filter(t => t.isFake);
     const mobileTimers = processedTimers.filter(t => t.isMobile && !t.isFake);
     const desktopTimers = processedTimers.filter(t => t.isDesktop && !t.isFake);
+
+    console.log(`Fake timers: ${fakeTimers.length}`);
+    console.log(`Mobile timers: ${mobileTimers.length}`);
+    console.log(`Desktop timers: ${desktopTimers.length}`);
 
     // Get unique users and folders for filters
     const uniqueUsers = [...new Set(processedTimers.map(t => JSON.stringify({ id: t.userId, name: t.user })))]
@@ -494,6 +618,9 @@ export async function GET(request) {
     })))]
       .map(str => JSON.parse(str))
       .sort((a, b) => a.name.localeCompare(b.name));
+
+    console.log(`Unique users: ${uniqueUsers.length}`);
+    console.log(`Unique folders: ${uniqueFolders.length}`);
 
     // Calculate statistics
     const stats = {
@@ -508,6 +635,11 @@ export async function GET(request) {
     };
 
     const totalTime = Date.now() - requestStartTime;
+
+    console.log("\n--- Final Stats ---");
+    console.log(JSON.stringify(stats, null, 2));
+    console.log(`\n⏱️  Total processing time: ${totalTime}ms`);
+    console.log("========== API REQUEST END ==========\n");
 
     return NextResponse.json({
       success: true,
@@ -525,12 +657,18 @@ export async function GET(request) {
       },
       meta: {
         processingTime: `${totalTime}ms`,
-        userRole: isAdmin ? 'admin' : 'member'
+        userRole: isAdmin ? 'admin' : (isGuest ? 'guest' : 'member')
       }
     });
 
   } catch (err) {
     const totalTime = Date.now() - requestStartTime;
+
+    console.log("\n❌❌❌ ERROR ❌❌❌");
+    console.log("Error message:", err.message);
+    console.log("Error stack:", err.stack);
+    console.log(`Failed after: ${totalTime}ms`);
+    console.log("========== API REQUEST END (ERROR) ==========\n");
 
     return NextResponse.json({
       error: err.message,
