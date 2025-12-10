@@ -202,6 +202,95 @@ export default function TeamAttendancePage() {
     setSelectedUsers([]);
   };
 
+  // Helper to convert attendance data to CSV format
+const convertToCSV = (data) => {
+  if (!data || data.length === 0) return '';
+
+  // Define CSV headers
+  const headers = [
+    'Date',
+    'User',
+    'Check In (Local)',
+    'Check In (UTC)',
+    'Check Out (Local)',
+    'Check Out (UTC)',
+    'Active Hours',
+    'Sessions',
+    'Total Breaks (min)',
+    'Break Details',
+    'Session Timeline'
+  ];
+
+  // Convert each record to CSV row
+  const rows = data.map(record => {
+    const breakDetails = record.breaks && record.breaks.length > 0
+      ? record.breaks.map(brk =>
+          `Break: ${formatTimestampToLocal(new Date(`${record.date} ${brk.startTime}`).getTime())} - ${formatTimestampToLocal(new Date(`${record.date} ${brk.endTime}`).getTime())} (${brk.durationMinutes}min)`
+        ).join('; ')
+      : 'No breaks';
+
+    const sessionDetails = record.timeline && record.timeline.length > 0
+      ? record.timeline.map(session =>
+          `Session ${session.sessionNumber}: ${formatTimestampToLocal(new Date(`${record.date} ${session.checkIn}`).getTime())} - ${formatTimestampToLocal(new Date(`${record.date} ${session.checkOut}`).getTime())} (${session.durationMinutes}min)`
+        ).join('; ')
+      : 'No sessions';
+
+    return [
+      `"${record.dateFormatted || formatDate(record.date)}"`,
+      `"${record.user}"`,
+      `"${formatTimestampToLocal(record.firstCheckInTimestamp)}"`,
+      `"${formatTimestampToUTC(record.firstCheckInTimestamp)}"`,
+      `"${formatTimestampToLocal(record.lastCheckOutTimestamp)}"`,
+      `"${formatTimestampToUTC(record.lastCheckOutTimestamp)}"`,
+      `"${record.totalActiveHours}"`,
+      `"${record.sessionCount}"`,
+      `"${record.totalBreakMinutes}"`,
+      `"${breakDetails}"`,
+      `"${sessionDetails}"`
+    ].join(',');
+  });
+
+  return [headers.join(','), ...rows].join('\n');
+};
+
+// Download CSV file
+const downloadCSV = () => {
+  const csvData = convertToCSV(filteredAttendance);
+
+  if (!csvData || csvData.trim() === '') {
+    alert('No data available to download');
+    return;
+  }
+
+  // Create blob and download link
+  const blob = new Blob([csvData], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+
+  // Create filename with current date and filter info
+  const dateStr = new Date().toISOString().split('T')[0];
+  let fileName = `attendance_${dateStr}`;
+
+  if (dateFilter !== 'today') {
+    fileName += `_${dateFilter}`;
+  }
+
+  if (selectedUsers.length > 0) {
+    fileName += `_${selectedUsers.length}_users`;
+  }
+
+  fileName += '.csv';
+
+  // Create download link and trigger click
+  const link = document.createElement('a');
+  link.href = url;
+  link.setAttribute('download', fileName);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+
+  // Clean up URL
+  URL.revokeObjectURL(url);
+};
   // Toggle row expansion
   const toggleRow = (key) => {
     const newExpanded = new Set(expandedRows);
@@ -247,43 +336,68 @@ export default function TeamAttendancePage() {
   return (
     <div className="min-h-screen bg-gray-100 p-4 md:p-8 font-sans">
 
-      {/* Header */}
-      <header className="flex justify-between items-center mb-8 pb-4 border-b border-gray-200">
-        <h1 className="text-3xl font-bold text-gray-800 flex items-center">
-          <Users className="w-7 h-7 mr-3 text-indigo-600" />
-          Team Attendance Dashboard
-        </h1>
-        <div className="flex gap-3">
-          <button
-            onClick={fetchAttendance}
-            disabled={loading}
-            className="flex items-center px-4 py-2 bg-indigo-500 text-white rounded-lg shadow-md hover:bg-indigo-600 transition duration-150 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
-            Refresh
-          </button>
-           <Link href="/">
-              <button className="flex items-center gap-2 px-5 py-2 bg-white text-gray-700 rounded-xl shadow-md hover:shadow-lg transition-all text-sm font-semibold">
-                <Calendar className="w-4 h-4" />
-                Tract Time
-              </button>
-            </Link>
+   {/* Header */}
+<header className="flex justify-between items-center mb-8 pb-4 border-b border-gray-200">
+  <h1 className="text-3xl font-bold text-gray-800 flex items-center">
+    <Users className="w-7 h-7 mr-3 text-indigo-600" />
+    Team Attendance Dashboard
+  </h1>
+  <div className="flex gap-3">
+    {/* Download CSV Button - ADD THIS */}
+    <button
+      onClick={downloadCSV}
+      disabled={filteredAttendance.length === 0}
+      className="flex items-center px-4 py-2 bg-green-500 text-white rounded-lg shadow-md hover:bg-green-600 transition duration-150 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+    >
+      <svg
+        className="w-4 h-4 mr-2"
+        fill="none"
+        stroke="currentColor"
+        viewBox="0 0 24 24"
+      >
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth={2}
+          d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+        />
+      </svg>
+      Download CSV
+    </button>
 
-            <Link href="/running-timers">
-              <button className="flex items-center gap-2 px-5 py-2 bg-white text-gray-700 rounded-xl shadow-md hover:shadow-lg transition-all text-sm font-semibold">
-                <Activity className="w-4 h-4" />
-                Running Timers
-              </button>
-            </Link>
-          <button
-            onClick={logout}
-            className="flex items-center px-4 py-2 bg-gray-200 text-gray-700 rounded-lg shadow-md hover:bg-gray-300 transition duration-150 text-sm"
-          >
-            <LogOut className="w-4 h-4 mr-2" />
-            Logout
-          </button>
-        </div>
-      </header>
+    {/* Rest of your existing buttons */}
+    <button
+      onClick={fetchAttendance}
+      disabled={loading}
+      className="flex items-center px-4 py-2 bg-indigo-500 text-white rounded-lg shadow-md hover:bg-indigo-600 transition duration-150 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+    >
+      <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+      Refresh
+    </button>
+
+    <Link href="/">
+      <button className="flex items-center gap-2 px-5 py-2 bg-white text-gray-700 rounded-xl shadow-md hover:shadow-lg transition-all text-sm font-semibold">
+        <Calendar className="w-4 h-4" />
+        Tract Time
+      </button>
+    </Link>
+
+    <Link href="/running-timers">
+      <button className="flex items-center gap-2 px-5 py-2 bg-white text-gray-700 rounded-xl shadow-md hover:shadow-lg transition-all text-sm font-semibold">
+        <Activity className="w-4 h-4" />
+        Running Timers
+      </button>
+    </Link>
+
+    <button
+      onClick={logout}
+      className="flex items-center px-4 py-2 bg-gray-200 text-gray-700 rounded-lg shadow-md hover:bg-gray-300 transition duration-150 text-sm"
+    >
+      <LogOut className="w-4 h-4 mr-2" />
+      Logout
+    </button>
+  </div>
+</header>
 
       {/* Stats Cards */}
       {stats && (
