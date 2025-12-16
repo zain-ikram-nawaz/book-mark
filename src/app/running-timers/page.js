@@ -240,6 +240,12 @@ export default function RunningTimersPage() {
                             Active Hours
                           </button>
                         </Link>
+                        <Link href="/zain">
+                          <button className="flex items-center gap-2 px-5 py-2 bg-white text-gray-700 rounded-xl shadow-md hover:shadow-lg transition-all text-sm font-semibold">
+                            <Calendar className="w-4 h-4" />
+                           Workload
+                          </button>
+                        </Link>
 
             <button
               onClick={logout}

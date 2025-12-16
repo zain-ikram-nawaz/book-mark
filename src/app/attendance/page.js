@@ -349,66 +349,67 @@ export default function TeamAttendancePage() {
   return (
     <div className="min-h-screen bg-gray-100 p-4 md:p-8 font-sans">
 
-      {/* Header */}
-      <header className="flex justify-between items-center mb-8 pb-4 border-b border-gray-200">
-        <h1 className="text-3xl font-bold text-gray-800 flex items-center">
-          <Users className="w-7 h-7 mr-3 text-indigo-600" />
-          Team Attendance Dashboard
-        </h1>
-        <div className="flex gap-3">
-          <button
-            onClick={downloadCSV}
-            disabled={filteredAttendance.length === 0}
-            className="flex items-center px-4 py-2 bg-green-500 text-white rounded-lg shadow-md hover:bg-green-600 transition duration-150 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <svg
-              className="w-4 h-4 mr-2"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-              />
-            </svg>
-            Download CSV
-          </button>
+     <header className="flex flex-col gap-4 md:flex-row md:justify-between md:items-center mb-8 pb-4 border-b border-gray-200">
 
-          <button
-            onClick={fetchAttendance}
-            disabled={loading}
-            className="flex items-center px-4 py-2 bg-indigo-500 text-white rounded-lg shadow-md hover:bg-indigo-600 transition duration-150 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
-            Refresh
-          </button>
+  <h1 className="text-3xl font-bold text-gray-800 flex items-center">
+    <Users className="w-7 h-7 mr-3 text-indigo-600" />
+    Team Attendance Dashboard
+  </h1>
 
-          <Link href="/">
-            <button className="flex items-center gap-2 px-5 py-2 bg-white text-gray-700 rounded-xl shadow-md hover:shadow-lg transition-all text-sm font-semibold">
-              <Calendar className="w-4 h-4" />
-              Track Time
-            </button>
-          </Link>
+  <div className="flex flex-wrap gap-3">
 
-          <Link href="/running-timers">
-            <button className="flex items-center gap-2 px-5 py-2 bg-white text-gray-700 rounded-xl shadow-md hover:shadow-lg transition-all text-sm font-semibold">
-              <Activity className="w-4 h-4" />
-              Running Timers
-            </button>
-          </Link>
+    <button
+      onClick={downloadCSV}
+      disabled={filteredAttendance.length === 0}
+      className="flex items-center px-4 py-2 bg-green-500 text-white rounded-lg shadow-md hover:bg-green-600 transition text-sm disabled:opacity-50"
+    >
+      Download CSV
+    </button>
 
-          <button
-            onClick={logout}
-            className="flex items-center px-4 py-2 bg-gray-200 text-gray-700 rounded-lg shadow-md hover:bg-gray-300 transition duration-150 text-sm"
-          >
-            <LogOut className="w-4 h-4 mr-2" />
-            Logout
-          </button>
-        </div>
-      </header>
+    <button
+      onClick={fetchAttendance}
+      disabled={loading}
+      className="flex items-center px-4 py-2 bg-indigo-500 text-white rounded-lg shadow-md hover:bg-indigo-600 transition text-sm disabled:opacity-50"
+    >
+      <RefreshCw className={`w-4 h-4 mr-2 ${loading ? "animate-spin" : ""}`} />
+      Refresh
+    </button>
+
+    <Link
+      href="/"
+      className="flex items-center gap-2 px-5 py-2 bg-white text-gray-700 rounded-xl shadow-md hover:shadow-lg transition text-sm font-semibold"
+    >
+      <Calendar className="w-4 h-4" />
+      Track Time
+    </Link>
+
+    <Link
+      href="/zain"
+      className="flex items-center gap-2 px-5 py-2 bg-white text-gray-700 rounded-xl shadow-md hover:shadow-lg transition text-sm font-semibold"
+    >
+      <Calendar className="w-4 h-4" />
+      Workload
+    </Link>
+
+    <Link
+      href="/running-timers"
+      className="flex items-center gap-2 px-5 py-2 bg-white text-gray-700 rounded-xl shadow-md hover:shadow-lg transition text-sm font-semibold"
+    >
+      <Activity className="w-4 h-4" />
+      Running Timers
+    </Link>
+
+    <button
+      onClick={logout}
+      className="flex items-center px-4 py-2 bg-gray-200 text-gray-700 rounded-lg shadow-md hover:bg-gray-300 transition text-sm"
+    >
+      <LogOut className="w-4 h-4 mr-2" />
+      Logout
+    </button>
+
+  </div>
+</header>
+
 
       {/* Stats Cards */}
       {stats && (

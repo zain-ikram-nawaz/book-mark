@@ -417,7 +417,7 @@ export default function SimplifiedTimerApp() {
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-            <label className="flex items-center gap-2 px-4 py-2 bg-white rounded-xl shadow-md text-sm text-gray-700 cursor-pointer hover:shadow-lg transition-shadow">
+            {/* <label className="flex items-center gap-2 px-4 py-2 bg-white rounded-xl shadow-md text-sm text-gray-700 cursor-pointer hover:shadow-lg transition-shadow">
               <input
                 type="checkbox"
                 checked={autoRefresh}
@@ -426,7 +426,7 @@ export default function SimplifiedTimerApp() {
               />
               <Zap className="w-4 h-4 text-yellow-500" />
               <span className="font-medium">Auto-refresh</span>
-            </label>
+            </label> */}
 
             <button
               onClick={fetchData}
@@ -451,6 +451,12 @@ export default function SimplifiedTimerApp() {
               <button className="flex items-center gap-2 px-5 py-2 bg-white text-gray-700 rounded-xl shadow-md hover:shadow-lg transition-all text-sm font-semibold">
                 <Calendar className="w-4 h-4" />
                 Active Hours
+              </button>
+            </Link>
+             <Link href="/zain">
+              <button className="flex items-center gap-2 px-5 py-2 bg-white text-gray-700 rounded-xl shadow-md hover:shadow-lg transition-all text-sm font-semibold">
+                <Calendar className="w-4 h-4" />
+             Workload
               </button>
             </Link>
 
