@@ -1,4 +1,3 @@
-
 import { NextResponse } from "next/server";
 
 function detectFakeTime(entry) {
@@ -118,14 +117,11 @@ export async function GET(request) {
 
       for (let i = 0; i < members.length; i += memberBatchSize) {
         const memberBatch = members.slice(i, i + memberBatchSize);
-        // console.log(`Processing batch ${Math.floor(i / memberBatchSize) + 1} (${memberBatch.length} members)`);
 
         const batchPromises = memberBatch.map(async (member) => {
           const userId = member.user.id;
           const username = member.user.username || member.user.email;
           const apiUrl = `https://api.clickup.com/api/v2/team/${teamId}/time_entries?subtasks=true&start_date=${startDate.getTime()}&assignee=${userId}`;
-
-          // console.log(`  Fetching for user: ${username} (ID: ${userId})`);
 
           try {
             const res = await fetch(apiUrl, {
@@ -135,7 +131,6 @@ export async function GET(request) {
             const data = await res.json();
 
             if (res.ok && Array.isArray(data.data)) {
-              // console.log(`  ✅ ${username}: ${data.data.length} entries`);
               return data.data;
             } else {
               console.log(`  ❌ ${username}: Failed -`, JSON.stringify(data, null, 2));
@@ -151,27 +146,18 @@ export async function GET(request) {
         batchResults.forEach(entries => allTimeEntries.push(...entries));
       }
 
-      // console.log(`\n✅ Total entries fetched (Admin): ${allTimeEntries.length}`);
-
     } else {
-      // console.log("\n--- NORMAL/GUEST USER MODE: Fetching Own Time Entries ---");
 
-      // ✅ Approach 1: Try direct assignee query
-      // console.log("\n🔍 Attempt 1: Direct assignee query");
       const apiUrl1 = `https://api.clickup.com/api/v2/team/${teamId}/time_entries?assignee=${currentUserId}&start_date=${startDate.getTime()}`;
-      // console.log("API URL:", apiUrl1);
 
       try {
         const res = await fetch(apiUrl1, {
           headers: { Authorization: `Bearer ${token}` }
         });
 
-        // console.log("Response Status:", res.status);
         const data = await res.json();
-        // console.log("Response Data:", JSON.stringify(data, null, 2));
 
         if (res.ok && Array.isArray(data.data)) {
-          // console.log(`✅ Entries found: ${data.data.length}`);
           allTimeEntries.push(...data.data);
         } else {
           console.log("❌ No data or error in response");
@@ -182,23 +168,18 @@ export async function GET(request) {
 
       // ✅ Approach 2: If no data, try fetching from accessible spaces
       if (allTimeEntries.length === 0) {
-        // console.log("\n🔍 Attempt 2: Fetching from accessible spaces");
 
         try {
           const spacesRes = await fetch(`https://api.clickup.com/api/v2/team/${teamId}/space?archived=false`, {
             headers: { Authorization: `Bearer ${token}` }
           });
 
-          // console.log("Spaces API Status:", spacesRes.status);
           const spacesData = await spacesRes.json();
-          // console.log("Accessible Spaces Count:", spacesData.spaces?.length || 0);
 
           if (spacesData.spaces && spacesData.spaces.length > 0) {
-            // console.log(`✅ Found ${spacesData.spaces.length} accessible spaces`);
 
             // Fetch time entries from each space
             for (const space of spacesData.spaces) {
-              // console.log(`  Fetching from space: ${space.name} (ID: ${space.id})`);
 
               const spaceTimeUrl = `https://api.clickup.com/api/v2/team/${teamId}/time_entries?space_id=${space.id}&assignee=${currentUserId}&start_date=${startDate.getTime()}`;
 
@@ -208,7 +189,6 @@ export async function GET(request) {
                 });
 
                 const data = await res.json();
-                // console.log(`  Space "${space.name}": Status ${res.status}, Entries: ${data.data?.length || 0}`);
 
                 if (res.ok && Array.isArray(data.data)) {
                   allTimeEntries.push(...data.data);
@@ -224,12 +204,9 @@ export async function GET(request) {
           console.log("❌ Error fetching spaces:", err.message);
         }
       }
-
-      // console.log(`\n✅ Total entries fetched (Normal/Guest User): ${allTimeEntries.length}`);
     }
 
     if (allTimeEntries.length === 0) {
-      // console.log("\n⚠️ No time entries found - returning empty response");
       return NextResponse.json({
         data: [],
         runningTimers: [],
@@ -247,9 +224,7 @@ export async function GET(request) {
       });
     }
 
-    // console.log("\n--- Processing Time Entries ---");
-
-    // Process all time entries
+    // ✅ Process all time entries with task URL
     const processedTimers = allTimeEntries.map(entry => {
       const fakeCheck = detectFakeTime(entry);
       const duration = Number(entry.duration || 0);
@@ -257,12 +232,15 @@ export async function GET(request) {
       const isRunning = !entry.end || entry.end === null || entry.end === 0 || entry.end === '';
       const end = entry.end ? Number(entry.end) : Date.now();
 
+      // ✅ Generate task URL - ClickUp standard format
+      const taskUrl = entry.task?.url || (entry.task?.id ? `https://app.clickup.com/t/${entry.task.id}` : null);
+// console.log(taskUrl,"url")
       return {
         user: entry.user?.username || entry.user?.email || "Unknown",
         userId: entry.user?.id,
         taskId: entry.task?.id,
         taskName: entry.task?.name || "Unknown Task",
-        taskUrl: entry.task?.url,
+        taskUrl: taskUrl, // ✅ Task URL added
         listId: entry.task?.list?.id,
         listName: entry.task?.list?.name,
         folderId: entry.task?.folder?.id,
@@ -286,20 +264,13 @@ export async function GET(request) {
       };
     });
 
-    // console.log(`✅ Processed ${processedTimers.length} timers`);
-
     // Separate running and stopped timers
     const runningTimers = processedTimers.filter(t => t.isRunning);
-    // console.log(`Running timers: ${runningTimers.length}`);
 
     // Filter timers by type
     const fakeTimers = processedTimers.filter(t => t.isFake);
     const mobileTimers = processedTimers.filter(t => t.isMobile && !t.isFake);
     const desktopTimers = processedTimers.filter(t => t.isDesktop && !t.isFake);
-
-    // console.log(`Fake timers: ${fakeTimers.length}`);
-    // console.log(`Mobile timers: ${mobileTimers.length}`);
-    // console.log(`Desktop timers: ${desktopTimers.length}`);
 
     // Get unique users and folders for filters
     const uniqueUsers = [...new Set(processedTimers.map(t => JSON.stringify({ id: t.userId, name: t.user })))]
@@ -312,9 +283,6 @@ export async function GET(request) {
     })))]
       .map(str => JSON.parse(str))
       .sort((a, b) => a.name.localeCompare(b.name));
-
-    // console.log(`Unique users: ${uniqueUsers.length}`);
-    // console.log(`Unique folders: ${uniqueFolders.length}`);
 
     // Calculate statistics
     const stats = {
@@ -329,11 +297,6 @@ export async function GET(request) {
     };
 
     const totalTime = Date.now() - requestStartTime;
-
-    // console.log("\n--- Final Stats ---");
-    // console.log(JSON.stringify(stats, null, 2));
-    // console.log(`\n⏱️  Total processing time: ${totalTime}ms`);
-    // console.log("========== API REQUEST END ==========\n");
 
     return NextResponse.json({
       success: true,
@@ -357,7 +320,6 @@ export async function GET(request) {
 
   } catch (err) {
     const totalTime = Date.now() - requestStartTime;
-
 
     console.log("Error message:", err.message);
     console.log(`Failed after: ${totalTime}ms`);

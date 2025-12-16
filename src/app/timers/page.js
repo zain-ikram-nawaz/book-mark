@@ -223,6 +223,7 @@ export default function SimplifiedTimerApp() {
     const { ok, data, error } = await authorizedFetch(`/api/tasks?days=${selectedDays}`);
 
     if (ok) {
+      console.log(data)
       setAllData(data.data || []);
       setRunningTimers(data.runningTimers || []);
       setAvailableUsers(data.filters?.users || []);
@@ -380,6 +381,7 @@ export default function SimplifiedTimerApp() {
     );
   }
 
+
   if (error) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-red-50 to-orange-50 p-8 flex items-center justify-center">
@@ -417,16 +419,7 @@ export default function SimplifiedTimerApp() {
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-            {/* <label className="flex items-center gap-2 px-4 py-2 bg-white rounded-xl shadow-md text-sm text-gray-700 cursor-pointer hover:shadow-lg transition-shadow">
-              <input
-                type="checkbox"
-                checked={autoRefresh}
-                onChange={(e) => setAutoRefresh(e.target.checked)}
-                className="w-4 h-4 text-indigo-600 rounded focus:ring-2 focus:ring-indigo-500"
-              />
-              <Zap className="w-4 h-4 text-yellow-500" />
-              <span className="font-medium">Auto-refresh</span>
-            </label> */}
+
 
             <button
               onClick={fetchData}
