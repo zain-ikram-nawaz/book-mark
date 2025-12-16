@@ -44,7 +44,7 @@ export async function GET(request) {
     const teamId = workspacesData.teams[0].id;
     const selectedWorkspace = workspacesData.teams[0];
 
-    console.log(`✅ Using workspace: ${selectedWorkspace.name} (ID: ${teamId})`);
+    // console.log(`✅ Using workspace: ${selectedWorkspace.name} (ID: ${teamId})`);
 
     // Get current user info
     const userRes = await fetch('https://api.clickup.com/api/v2/user', {
@@ -53,8 +53,8 @@ export async function GET(request) {
 
     const userData = await userRes.json();
     const currentUserId = userData.user.id;
-    console.log("✅ Current User ID:", currentUserId);
-    console.log("✅ Current User Name:", userData.user.username || userData.user.email);
+    // console.log("✅ Current User ID:", currentUserId);
+    // console.log("✅ Current User Name:", userData.user.username || userData.user.email);
 
     // Calculate week range
     const now = new Date();
@@ -69,9 +69,9 @@ export async function GET(request) {
     weekEnd.setDate(weekStart.getDate() + 6);
     weekEnd.setHours(23, 59, 59, 999);
 
-    console.log(`📅 Week: ${weekStart.toLocaleDateString()} to ${weekEnd.toLocaleDateString()}`);
-    console.log(`📅 Week Start Timestamp: ${weekStart.getTime()}`);
-    console.log(`📅 Week End Timestamp: ${weekEnd.getTime()}`);
+    // console.log(`📅 Week: ${weekStart.toLocaleDateString()} to ${weekEnd.toLocaleDateString()}`);
+    // console.log(`📅 Week Start Timestamp: ${weekStart.getTime()}`);
+    // console.log(`📅 Week End Timestamp: ${weekEnd.getTime()}`);
 
     // Fetch team members
     const membersRes = await fetch(`https://api.clickup.com/api/v2/team/${teamId}`, {
@@ -85,7 +85,7 @@ export async function GET(request) {
     if (membersRes.ok) {
       const membersData = await membersRes.json();
       members = membersData.team?.members || [];
-      console.log(`✅ Found ${members.length} team members`);
+      // console.log(`✅ Found ${members.length} team members`);
 
       if (members.length > 0) {
         const currentUserMember = members.find(m => m.user.id === currentUserId);
@@ -99,8 +99,8 @@ export async function GET(request) {
 
         isGuest = !currentUserMember || currentUserMember.user.role === 3 || currentUserMember.user.role === 'guest';
 
-        console.log("✅ Is Admin:", isAdmin);
-        console.log("✅ Is Guest:", isGuest);
+        // console.log("✅ Is Admin:", isAdmin);
+        // console.log("✅ Is Guest:", isGuest);
       } else {
         console.log("⚠️ No members returned - assuming guest user");
       }
@@ -110,10 +110,10 @@ export async function GET(request) {
     let usersToProcess = [];
 
     if (isAdmin && members.length > 0) {
-      console.log("\n--- ADMIN MODE: Processing All Members ---");
+      // console.log("\n--- ADMIN MODE: Processing All Members ---");
       usersToProcess = members;
     } else {
-      console.log("\n--- NORMAL/GUEST USER MODE: Processing Own Data Only ---");
+      // console.log("\n--- NORMAL/GUEST USER MODE: Processing Own Data Only ---");
       usersToProcess = [{
         user: {
           id: currentUserId,
@@ -124,10 +124,10 @@ export async function GET(request) {
       }];
     }
 
-    console.log(`Processing ${usersToProcess.length} user(s)`);
+    // console.log(`Processing ${usersToProcess.length} user(s)`);
 
     // STEP 1: Fetch time entries for selected users in parallel
-    console.log(`\n⚡ Fetching time entries...`);
+    // console.log(`\n⚡ Fetching time entries...`);
 
     const timeEntriesPromises = usersToProcess.map(async (member) => {
       const userId = member.user.id;
@@ -136,7 +136,7 @@ export async function GET(request) {
       try {
         const timeUrl = `https://api.clickup.com/api/v2/team/${teamId}/time_entries?start_date=${weekStart.getTime()}&end_date=${weekEnd.getTime()}&assignee=${userId}`;
 
-        console.log(`Fetching time entries for ${username}: ${timeUrl}`);
+        // console.log(`Fetching time entries for ${username}: ${timeUrl}`);
 
         const timeRes = await fetch(timeUrl, {
           headers: { Authorization: token }
@@ -146,14 +146,14 @@ export async function GET(request) {
           const timeData = await timeRes.json();
           const entries = timeData.data || [];
 
-          console.log(`  ✓ ${username}: ${entries.length} time entries`);
+          // console.log(`  ✓ ${username}: ${entries.length} time entries`);
 
           // Debug: Log first entry details
-          if (entries.length > 0) {
-            console.log(`    First entry start: ${new Date(parseInt(entries[0].start)).toISOString()}`);
-            console.log(`    First entry duration: ${entries[0].duration}ms`);
-            console.log(`    First entry task:`, entries[0].task?.name || 'No task');
-          }
+          // if (entries.length > 0) {
+          //   console.log(`    First entry start: ${new Date(parseInt(entries[0].start)).toISOString()}`);
+          //   console.log(`    First entry duration: ${entries[0].duration}ms`);
+          //   console.log(`    First entry task:`, entries[0].task?.name || 'No task');
+          // }
 
           return { userId, entries };
         } else {
@@ -175,7 +175,7 @@ export async function GET(request) {
     });
 
     const totalTimeEntries = timeEntriesResults.reduce((sum, r) => sum + r.entries.length, 0);
-    console.log(`✅ Total time entries fetched: ${totalTimeEntries}`);
+    // console.log(`✅ Total time entries fetched: ${totalTimeEntries}`);
 
     // STEP 2: Fetch tasks based on user role
     let allTasks = [];
@@ -193,7 +193,7 @@ export async function GET(request) {
       if (spacesRes.ok) {
         const spacesData = await spacesRes.json();
         const spaces = spacesData.spaces || [];
-        console.log(`✅ Found ${spaces.length} spaces`);
+        // console.log(`✅ Found ${spaces.length} spaces`);
 
         // Fetch all folders and lists in parallel
         const spacePromises = spaces.map(async (space) => {
@@ -251,7 +251,7 @@ export async function GET(request) {
         const spaceLists = await Promise.all(spacePromises);
         spaceLists.forEach(lists => allLists.push(...lists));
 
-        console.log(`✅ Found ${allLists.length} total lists`);
+        // console.log(`✅ Found ${allLists.length} total lists`);
 
         // Fetch tasks for all lists in parallel batches
         const BATCH_SIZE = 15;
@@ -279,7 +279,7 @@ export async function GET(request) {
           const batchResults = await Promise.all(batchPromises);
           batchResults.forEach(tasks => allTasks.push(...tasks));
 
-          console.log(`  Progress: ${Math.min(i + BATCH_SIZE, allLists.length)}/${allLists.length} lists processed`);
+          // console.log(`  Progress: ${Math.min(i + BATCH_SIZE, allLists.length)}/${allLists.length} lists processed`);
         }
       }
 
@@ -303,7 +303,7 @@ export async function GET(request) {
       }
     }
 
-    console.log(`✅ Fetched ${allTasks.length} total tasks`);
+    // console.log(`✅ Fetched ${allTasks.length} total tasks`);
 
     // STEP 3: Fetch future tasks for each user
     console.log(`\n⚡ Fetching future tasks...`);
@@ -334,7 +334,7 @@ export async function GET(request) {
       futureTasksByUser[result.userId] = result.tasks;
     });
 
-    console.log(`✅ Fetched future tasks for ${futureTasksResults.length} users`);
+    // console.log(`✅ Fetched future tasks for ${futureTasksResults.length} users`);
 
     // STEP 4: Group tasks by assignee
     const tasksByUser = {};
@@ -425,7 +425,7 @@ export async function GET(request) {
       const isOverloaded = trackedHours > WEEKLY_HOURS_TARGET;
       const isUnderUtilized = trackedHours < (WEEKLY_HOURS_TARGET * 0.7);
 
-      console.log(`  👤 ${username}: ${trackedHours.toFixed(2)}h (${utilizationPercent.toFixed(1)}%) | Tasks: ${userTasks.length} (${completedTasks.length} done)`);
+      // console.log(`  👤 ${usernme}: ${trackedHours.toFixed(2)}h (${utilizationPercent.toFixed(1)}%) | Tasks: ${userTasks.length} (${completedTasks.length} done)`);
 
       workloadData.push({
         userId,
@@ -524,8 +524,8 @@ export async function GET(request) {
     };
 
     const totalTime = Date.now() - requestStartTime;
-    console.log(`\n⏱️  TOTAL REQUEST TIME: ${totalTime}ms (${(totalTime/1000).toFixed(2)}s)`);
-    console.log(`${'='.repeat(60)}\n`);
+    // console.log(`\n⏱️  TOTAL REQUEST TIME: ${totalTime}ms (${(totalTime/1000).toFixed(2)}s)`);
+    // console.log(`${'='.repeat(60)}\n`);
 
     return NextResponse.json({
       success: true,
@@ -581,8 +581,8 @@ function calculateDailyBreakdown(timeEntries, weekStart, weekEnd, dailyTarget) {
     };
   }
 
-  console.log('\n--- Daily Breakdown Debug ---');
-  console.log('Initialized days:', Object.keys(dailyMap));
+  // console.log('\n--- Daily Breakdown Debug ---');
+  // console.log('Initialized days:', Object.keys(dailyMap));
 
   // Group time entries by date
   timeEntries.forEach(entry => {
@@ -596,7 +596,7 @@ function calculateDailyBreakdown(timeEntries, weekStart, weekEnd, dailyTarget) {
     const day = String(entryDate.getDate()).padStart(2, '0');
     const dateKey = `${year}-${month}-${day}`;
 
-    console.log(`Entry: ${entryDate.toISOString()} -> ${dateKey}, Duration: ${entry.duration}ms`);
+    // console.log(`Entry: ${entryDate.toISOString()} -> ${dateKey}, Duration: ${entry.duration}ms`);
 
     if (dailyMap[dateKey]) {
       dailyMap[dateKey].totalMs += Number(entry.duration || 0);
@@ -630,8 +630,8 @@ function calculateDailyBreakdown(timeEntries, weekStart, weekEnd, dailyTarget) {
     };
   });
 
-  console.log('Daily breakdown result:', result.map(d => `${d.dayName}: ${d.trackedHours}h`));
-  console.log('--- End Daily Breakdown Debug ---\n');
+  // console.log('Daily breakdown result:', result.map(d => `${d.dayName}: ${d.trackedHours}h`));
+  // console.log('--- End Daily Breakdown Debug ---\n');
 
   return result;
 }
@@ -639,8 +639,8 @@ function calculateDailyBreakdown(timeEntries, weekStart, weekEnd, dailyTarget) {
 function calculateTimeByProject(timeEntries) {
   const projectMap = {};
 
-  console.log('\n--- Time by Project Debug ---');
-  console.log(`Processing ${timeEntries.length} time entries`);
+  // console.log('\n--- Time by Project Debug ---');
+  // console.log(`Processing ${timeEntries.length} time entries`);
 
   timeEntries.forEach((entry, idx) => {
     // Try multiple ways to get project/list name
@@ -685,8 +685,8 @@ function calculateTimeByProject(timeEntries) {
 
   projects.sort((a, b) => b.totalMs - a.totalMs);
 
-  console.log('Projects found:', projects.map(p => `${p.projectName}: ${p.hours}h`));
-  console.log('--- End Time by Project Debug ---\n');
+  // console.log('Projects found:', projects.map(p => `${p.projectName}: ${p.hours}h`));
+  // console.log('--- End Time by Project Debug ---\n');
 
   return projects;
 }
@@ -711,7 +711,7 @@ function calculateTasksByPriority(tasks) {
     none: 0
   };
 
-  console.log('\n--- Tasks by Priority Debug ---');
+  // console.log('\n--- Tasks by Priority Debug ---');
 
   tasks.forEach((task, idx) => {
     const priority = task.priority?.priority;
@@ -727,8 +727,8 @@ function calculateTasksByPriority(tasks) {
     else priorityMap.none++;
   });
 
-  console.log('Priority distribution:', priorityMap);
-  console.log('--- End Tasks by Priority Debug ---\n');
+  // console.log('Priority distribution:', priorityMap);
+  // console.log('--- End Tasks by Priority Debug ---\n');
 
   return priorityMap;
 }

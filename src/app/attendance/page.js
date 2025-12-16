@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
-import { RefreshCw, LogOut, Clock, Users, Calendar,Activity, TrendingUp, Coffee, X, User } from 'lucide-react';
+import { RefreshCw, LogOut, Clock, Users, Calendar, Activity, TrendingUp, X, User, ExternalLink } from 'lucide-react';
 
 const ACCESS_TOKEN_KEY = 'clickup_access_token';
 
@@ -106,7 +106,7 @@ export default function TeamAttendancePage() {
   const [stats, setStats] = useState(null);
   const [error, setError] = useState(null);
   const [dateFilter, setDateFilter] = useState('today');
-  const [selectedUsers, setSelectedUsers] = useState([]); // ✅ Changed to array
+  const [selectedUsers, setSelectedUsers] = useState([]);
   const [expandedRows, setExpandedRows] = useState(new Set());
   const [userTimezone, setUserTimezone] = useState('');
 
@@ -149,7 +149,6 @@ export default function TeamAttendancePage() {
       const data = await response.json();
 
       if (response.ok) {
-        // Ensure unique records
         const uniqueAttendance = (data.data || []).map((record, index) => ({
           ...record,
           uniqueId: record.uniqueId || `${record.userId}_${record.date}_${index}_${Date.now()}`
@@ -172,7 +171,7 @@ export default function TeamAttendancePage() {
     }
   }, [token, dateFilter, fetchAttendance]);
 
-  // ✅ Filter data by multiple users
+  // Filter data by multiple users
   const filteredAttendance = attendance.filter(record => {
     if (selectedUsers.length > 0) {
       return selectedUsers.includes(record.userId);
@@ -186,7 +185,7 @@ export default function TeamAttendancePage() {
     name: a.user
   }])).values()].sort((a, b) => a.name.localeCompare(b.name));
 
-  // ✅ Toggle user selection
+  // Toggle user selection
   const toggleUserSelection = (userId) => {
     setSelectedUsers(prev => {
       if (prev.includes(userId)) {
@@ -197,100 +196,114 @@ export default function TeamAttendancePage() {
     });
   };
 
-  // ✅ Clear all user filters
+  // Clear all user filters
   const clearUserFilters = () => {
     setSelectedUsers([]);
   };
 
   // Helper to convert attendance data to CSV format
-const convertToCSV = (data) => {
-  if (!data || data.length === 0) return '';
+  const convertToCSV = (data) => {
+    if (!data || data.length === 0) return '';
 
-  // Define CSV headers
-  const headers = [
-    'Date',
-    'User',
-    'Check In (Local)',
-    'Check In (UTC)',
-    'Check Out (Local)',
-    'Check Out (UTC)',
-    'Active Hours',
-    'Sessions',
-    'Total Breaks (min)',
-    'Break Details',
-    'Session Timeline'
-  ];
+    const headers = [
+      'Date',
+      'User',
+      'Check In (Local)',
+      'Check In (UTC)',
+      'Check Out (Local)',
+      'Check Out (UTC)',
+      'Active Hours',
+      'Sessions',
+      'Task Name',
+      'Task URL',
+      'Task Hours',
+      'Session Start',
+      'Session End',
+      'Session Duration (Hours)'
+    ];
 
-  // Convert each record to CSV row
-  const rows = data.map(record => {
-    const breakDetails = record.breaks && record.breaks.length > 0
-      ? record.breaks.map(brk =>
-          `Break: ${formatTimestampToLocal(new Date(`${record.date} ${brk.startTime}`).getTime())} - ${formatTimestampToLocal(new Date(`${record.date} ${brk.endTime}`).getTime())} (${brk.durationMinutes}min)`
-        ).join('; ')
-      : 'No breaks';
+    const rows = [];
 
-    const sessionDetails = record.timeline && record.timeline.length > 0
-      ? record.timeline.map(session =>
-          `Session ${session.sessionNumber}: ${formatTimestampToLocal(new Date(`${record.date} ${session.checkIn}`).getTime())} - ${formatTimestampToLocal(new Date(`${record.date} ${session.checkOut}`).getTime())} (${session.durationMinutes}min)`
-        ).join('; ')
-      : 'No sessions';
+    data.forEach(record => {
+      if (record.tasks && record.tasks.length > 0) {
+        record.tasks.forEach(task => {
+          task.sessions.forEach(session => {
+            rows.push([
+              `"${record.dateFormatted || formatDate(record.date)}"`,
+              `"${record.user}"`,
+              `"${formatTimestampToLocal(record.checkInTimestamp)}"`,
+              `"${formatTimestampToUTC(record.checkInTimestamp)}"`,
+              `"${formatTimestampToLocal(record.checkOutTimestamp)}"`,
+              `"${formatTimestampToUTC(record.checkOutTimestamp)}"`,
+              `"${record.totalActiveHours}"`,
+              `"${record.sessionCount}"`,
+              `"${task.taskName}"`,
+              `"${task.taskUrl || 'N/A'}"`,
+              `"${task.totalHours}"`,
+              `"${session.startTime}"`,
+              `"${session.endTime}"`,
+              `"${session.durationHours}"`
+            ].join(','));
+          });
+        });
+      } else {
+        rows.push([
+          `"${record.dateFormatted || formatDate(record.date)}"`,
+          `"${record.user}"`,
+          `"${formatTimestampToLocal(record.checkInTimestamp)}"`,
+          `"${formatTimestampToUTC(record.checkInTimestamp)}"`,
+          `"${formatTimestampToLocal(record.checkOutTimestamp)}"`,
+          `"${formatTimestampToUTC(record.checkOutTimestamp)}"`,
+          `"${record.totalActiveHours}"`,
+          `"${record.sessionCount}"`,
+          `"No tasks"`,
+          `"N/A"`,
+          `"0"`,
+          `"N/A"`,
+          `"N/A"`,
+          `"0"`
+        ].join(','));
+      }
+    });
 
-    return [
-      `"${record.dateFormatted || formatDate(record.date)}"`,
-      `"${record.user}"`,
-      `"${formatTimestampToLocal(record.firstCheckInTimestamp)}"`,
-      `"${formatTimestampToUTC(record.firstCheckInTimestamp)}"`,
-      `"${formatTimestampToLocal(record.lastCheckOutTimestamp)}"`,
-      `"${formatTimestampToUTC(record.lastCheckOutTimestamp)}"`,
-      `"${record.totalActiveHours}"`,
-      `"${record.sessionCount}"`,
-      `"${record.totalBreakMinutes}"`,
-      `"${breakDetails}"`,
-      `"${sessionDetails}"`
-    ].join(',');
-  });
+    return [headers.join(','), ...rows].join('\n');
+  };
 
-  return [headers.join(','), ...rows].join('\n');
-};
+  // Download CSV file
+  const downloadCSV = () => {
+    const csvData = convertToCSV(filteredAttendance);
 
-// Download CSV file
-const downloadCSV = () => {
-  const csvData = convertToCSV(filteredAttendance);
+    if (!csvData || csvData.trim() === '') {
+      alert('No data available to download');
+      return;
+    }
 
-  if (!csvData || csvData.trim() === '') {
-    alert('No data available to download');
-    return;
-  }
+    const blob = new Blob([csvData], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
 
-  // Create blob and download link
-  const blob = new Blob([csvData], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
+    const dateStr = new Date().toISOString().split('T')[0];
+    let fileName = `attendance_${dateStr}`;
 
-  // Create filename with current date and filter info
-  const dateStr = new Date().toISOString().split('T')[0];
-  let fileName = `attendance_${dateStr}`;
+    if (dateFilter !== 'today') {
+      fileName += `_${dateFilter}`;
+    }
 
-  if (dateFilter !== 'today') {
-    fileName += `_${dateFilter}`;
-  }
+    if (selectedUsers.length > 0) {
+      fileName += `_${selectedUsers.length}_users`;
+    }
 
-  if (selectedUsers.length > 0) {
-    fileName += `_${selectedUsers.length}_users`;
-  }
+    fileName += '.csv';
 
-  fileName += '.csv';
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', fileName);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
 
-  // Create download link and trigger click
-  const link = document.createElement('a');
-  link.href = url;
-  link.setAttribute('download', fileName);
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
 
-  // Clean up URL
-  URL.revokeObjectURL(url);
-};
   // Toggle row expansion
   const toggleRow = (key) => {
     const newExpanded = new Set(expandedRows);
@@ -336,68 +349,66 @@ const downloadCSV = () => {
   return (
     <div className="min-h-screen bg-gray-100 p-4 md:p-8 font-sans">
 
-   {/* Header */}
-<header className="flex justify-between items-center mb-8 pb-4 border-b border-gray-200">
-  <h1 className="text-3xl font-bold text-gray-800 flex items-center">
-    <Users className="w-7 h-7 mr-3 text-indigo-600" />
-    Team Attendance Dashboard
-  </h1>
-  <div className="flex gap-3">
-    {/* Download CSV Button - ADD THIS */}
-    <button
-      onClick={downloadCSV}
-      disabled={filteredAttendance.length === 0}
-      className="flex items-center px-4 py-2 bg-green-500 text-white rounded-lg shadow-md hover:bg-green-600 transition duration-150 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
-    >
-      <svg
-        className="w-4 h-4 mr-2"
-        fill="none"
-        stroke="currentColor"
-        viewBox="0 0 24 24"
-      >
-        <path
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          strokeWidth={2}
-          d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-        />
-      </svg>
-      Download CSV
-    </button>
+      {/* Header */}
+      <header className="flex justify-between items-center mb-8 pb-4 border-b border-gray-200">
+        <h1 className="text-3xl font-bold text-gray-800 flex items-center">
+          <Users className="w-7 h-7 mr-3 text-indigo-600" />
+          Team Attendance Dashboard
+        </h1>
+        <div className="flex gap-3">
+          <button
+            onClick={downloadCSV}
+            disabled={filteredAttendance.length === 0}
+            className="flex items-center px-4 py-2 bg-green-500 text-white rounded-lg shadow-md hover:bg-green-600 transition duration-150 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <svg
+              className="w-4 h-4 mr-2"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+              />
+            </svg>
+            Download CSV
+          </button>
 
-    {/* Rest of your existing buttons */}
-    <button
-      onClick={fetchAttendance}
-      disabled={loading}
-      className="flex items-center px-4 py-2 bg-indigo-500 text-white rounded-lg shadow-md hover:bg-indigo-600 transition duration-150 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
-    >
-      <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
-      Refresh
-    </button>
+          <button
+            onClick={fetchAttendance}
+            disabled={loading}
+            className="flex items-center px-4 py-2 bg-indigo-500 text-white rounded-lg shadow-md hover:bg-indigo-600 transition duration-150 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
+          </button>
 
-    <Link href="/">
-      <button className="flex items-center gap-2 px-5 py-2 bg-white text-gray-700 rounded-xl shadow-md hover:shadow-lg transition-all text-sm font-semibold">
-        <Calendar className="w-4 h-4" />
-        Tract Time
-      </button>
-    </Link>
+          <Link href="/">
+            <button className="flex items-center gap-2 px-5 py-2 bg-white text-gray-700 rounded-xl shadow-md hover:shadow-lg transition-all text-sm font-semibold">
+              <Calendar className="w-4 h-4" />
+              Track Time
+            </button>
+          </Link>
 
-    <Link href="/running-timers">
-      <button className="flex items-center gap-2 px-5 py-2 bg-white text-gray-700 rounded-xl shadow-md hover:shadow-lg transition-all text-sm font-semibold">
-        <Activity className="w-4 h-4" />
-        Running Timers
-      </button>
-    </Link>
+          <Link href="/running-timers">
+            <button className="flex items-center gap-2 px-5 py-2 bg-white text-gray-700 rounded-xl shadow-md hover:shadow-lg transition-all text-sm font-semibold">
+              <Activity className="w-4 h-4" />
+              Running Timers
+            </button>
+          </Link>
 
-    <button
-      onClick={logout}
-      className="flex items-center px-4 py-2 bg-gray-200 text-gray-700 rounded-lg shadow-md hover:bg-gray-300 transition duration-150 text-sm"
-    >
-      <LogOut className="w-4 h-4 mr-2" />
-      Logout
-    </button>
-  </div>
-</header>
+          <button
+            onClick={logout}
+            className="flex items-center px-4 py-2 bg-gray-200 text-gray-700 rounded-lg shadow-md hover:bg-gray-300 transition duration-150 text-sm"
+          >
+            <LogOut className="w-4 h-4 mr-2" />
+            Logout
+          </button>
+        </div>
+      </header>
 
       {/* Stats Cards */}
       {stats && (
@@ -435,8 +446,8 @@ const downloadCSV = () => {
           <div className="bg-white p-6 rounded-xl shadow-md">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-600">Avg Hours/Day</p>
-                <p className="text-2xl font-bold text-gray-800">{stats.averageHoursPerDay}h</p>
+                <p className="text-sm text-gray-600">Processing Time</p>
+                <p className="text-2xl font-bold text-gray-800">{stats.processingTime}</p>
               </div>
               <TrendingUp className="w-10 h-10 text-purple-500" />
             </div>
@@ -466,7 +477,7 @@ const downloadCSV = () => {
           ))}
         </div>
 
-        {/* ✅ Multi-Select User Filter */}
+        {/* Multi-Select User Filter */}
         <div className="flex flex-col md:flex-row gap-4">
           <div className="flex-1">
             <label className="text-sm font-medium text-gray-600 mb-2 flex items-center justify-between">
@@ -516,7 +527,7 @@ const downloadCSV = () => {
           </div>
         </div>
 
-        {/* ✅ Active Filters Display */}
+        {/* Active Filters Display */}
         <div className="mt-4 flex flex-wrap gap-2">
           {dateFilter !== 'today' && (
             <span className="px-3 py-1 bg-indigo-100 text-indigo-700 rounded-full text-sm font-medium">
@@ -561,14 +572,13 @@ const downloadCSV = () => {
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Check Out</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Active Hours</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Sessions</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Breaks</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Details</th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {filteredAttendance.length === 0 ? (
                 <tr>
-                  <td colSpan="8" className="px-6 py-8 text-center">
+                  <td colSpan="7" className="px-6 py-8 text-center">
                     <div className="flex flex-col items-center justify-center text-gray-500">
                       <Calendar className="w-12 h-12 mb-3 text-gray-400" />
                       <p className="text-lg font-medium">No attendance records found</p>
@@ -590,15 +600,15 @@ const downloadCSV = () => {
                           {record.user}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-green-600 font-semibold">
-                          <div>🟢 {formatTimestampToLocal(record.firstCheckInTimestamp)}</div>
+                          <div>🟢 {formatTimestampToLocal(record.checkInTimestamp)}</div>
                           <div className="text-xs text-gray-500 font-normal">
-                            UTC: {formatTimestampToUTC(record.firstCheckInTimestamp)}
+                            UTC: {formatTimestampToUTC(record.checkInTimestamp)}
                           </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-red-600 font-semibold">
-                          <div>🔴 {formatTimestampToLocal(record.lastCheckOutTimestamp)}</div>
+                          <div>🔴 {formatTimestampToLocal(record.checkOutTimestamp)}</div>
                           <div className="text-xs text-gray-500 font-normal">
-                            UTC: {formatTimestampToUTC(record.lastCheckOutTimestamp)}
+                            UTC: {formatTimestampToUTC(record.checkOutTimestamp)}
                           </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-semibold">
@@ -606,12 +616,6 @@ const downloadCSV = () => {
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                           {record.sessionCount}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                          <div className="flex items-center">
-                            <Coffee className="w-4 h-4 mr-1 text-amber-600" />
-                            {record.totalBreakMinutes} min
-                          </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm">
                           <button
@@ -623,85 +627,71 @@ const downloadCSV = () => {
                         </td>
                       </tr>
 
-                      {/* Expanded Row */}
+                      {/* Expanded Row - Task Breakdown */}
                       {isExpanded && (
                         <tr>
-                          <td colSpan="8" className="px-6 py-4 bg-gray-50">
+                          <td colSpan="7" className="px-6 py-4 bg-gray-50">
                             <div className="space-y-4">
-                              {/* Timeline */}
-                              <div>
-                                <h4 className="font-semibold text-gray-700 mb-2 flex items-center">
-                                  <Clock className="w-4 h-4 mr-2" />
-                                  Session Timeline
-                                  <span className="ml-2 text-xs font-normal text-gray-500">
-                                    (Your Time: {userTimezone})
-                                  </span>
-                                </h4>
-                                <div className="space-y-2">
-                                  {record.timeline && record.timeline.map((session, idx) => {
-                                    const checkInTime = new Date(`${record.date} ${session.checkIn}`).getTime();
-                                    const checkOutTime = new Date(`${record.date} ${session.checkOut}`).getTime();
+                              <h4 className="font-semibold text-gray-700 mb-3 flex items-center">
+                                <Clock className="w-4 h-4 mr-2" />
+                                Task Breakdown
+                                <span className="ml-2 text-xs font-normal text-gray-500">
+                                  (Your Time: {userTimezone})
+                                </span>
+                              </h4>
 
-                                    return (
-                                      <div key={`${record.uniqueId}_session_${idx}`} className="flex flex-col text-sm bg-white p-3 rounded-lg shadow-sm">
-                                        <div className="flex items-center mb-2">
-                                          <span className="font-medium text-indigo-600 mr-3">Session {session.sessionNumber}:</span>
-                                          <span className="text-gray-600">({session.durationMinutes} min)</span>
-                                          {session.nextBreak && (
-                                            <span className="ml-3 text-amber-600">☕ {session.nextBreak} break</span>
-                                          )}
-                                        </div>
-
-                                        <div className="mb-1">
-                                          <span className="text-green-600 mr-2">🟢 {formatTimestampToLocal(checkInTime)}</span>
-                                          <span className="text-gray-400 mx-2">→</span>
-                                          <span className="text-red-600">🔴 {formatTimestampToLocal(checkOutTime)}</span>
-                                        </div>
-
-                                        <div className="text-xs text-gray-500">
-                                          UTC: {formatTimestampToUTC(checkInTime)} → {formatTimestampToUTC(checkOutTime)}
+                              {record.tasks && record.tasks.length > 0 ? (
+                                <div className="space-y-3">
+                                  {record.tasks.map((task, taskIdx) => (
+                                    <div key={`${record.uniqueId}_task_${taskIdx}`} className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
+                                      {/* Task Header */}
+                                      <div className="flex items-start justify-between mb-3">
+                                        <div className="flex-1">
+                                          <div className="flex items-center gap-2 mb-1">
+                                            <h5 className="font-semibold text-gray-800">{task.taskName}</h5>
+                                            {task.taskUrl && (
+                                              <a
+                                                href={task.taskUrl}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="text-indigo-600 hover:text-indigo-800"
+                                              >
+                                                <ExternalLink className="w-4 h-4" />
+                                              </a>
+                                            )}
+                                          </div>
+                                          <div className="flex items-center gap-4 text-sm text-gray-600">
+                                            <span className="font-medium text-indigo-600">
+                                              Total: {task.totalHours}h ({task.totalMinutes} min)
+                                            </span>
+                                            <span className="text-gray-500">
+                                              {task.sessions.length} session{task.sessions.length !== 1 ? 's' : ''}
+                                            </span>
+                                          </div>
                                         </div>
                                       </div>
-                                    );
-                                  })}
+
+                                      {/* Task Sessions */}
+                                      <div className="space-y-2 mt-3 pl-4 border-l-2 border-indigo-200">
+                                        {task.sessions.map((session, sessionIdx) => (
+                                          <div key={`${record.uniqueId}_task_${taskIdx}_session_${sessionIdx}`} className="text-sm">
+                                            <div className="flex items-center gap-2 mb-1">
+                                              <span className="text-green-600">🟢 {session.startTime}</span>
+                                              <span className="text-gray-400">→</span>
+                                              <span className="text-red-600">🔴 {session.endTime}</span>
+                                              <span className="text-gray-600 ml-2">
+                                                ({session.durationHours}h / {session.durationMinutes} min)
+                                              </span>
+                                            </div>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  ))}
                                 </div>
-                              </div>
-
-                              {/* Breaks */}
-                              {record.breaks && record.breaks.length > 0 && (
-                                <div>
-                                  <h4 className="font-semibold text-gray-700 mb-2 flex items-center">
-                                    <Coffee className="w-4 h-4 mr-2" />
-                                    Break Details
-                                    <span className="ml-2 text-xs font-normal text-gray-500">
-                                      (Your Time: {userTimezone})
-                                    </span>
-                                  </h4>
-                                  <div className="space-y-2">
-                                    {record.breaks.map((brk, idx) => {
-                                      const breakStartTime = new Date(`${record.date} ${brk.startTime}`).getTime();
-                                      const breakEndTime = new Date(`${record.date} ${brk.endTime}`).getTime();
-
-                                      return (
-                                        <div key={`${record.uniqueId}_break_${idx}`} className="flex flex-col text-sm bg-white p-3 rounded-lg shadow-sm">
-                                          <div className="flex items-center mb-2">
-                                            <span className="font-medium text-amber-600 mr-3">Break {idx + 1}:</span>
-                                            <span className="text-gray-600">({brk.durationMinutes} minutes)</span>
-                                          </div>
-
-                                          <div className="mb-1">
-                                            <span className="text-gray-700">{formatTimestampToLocal(breakStartTime)}</span>
-                                            <span className="mx-2">→</span>
-                                            <span className="text-gray-700">{formatTimestampToLocal(breakEndTime)}</span>
-                                          </div>
-
-                                          <div className="text-xs text-gray-500">
-                                            UTC: {formatTimestampToUTC(breakStartTime)} → {formatTimestampToUTC(breakEndTime)}
-                                          </div>
-                                        </div>
-                                      );
-                                    })}
-                                  </div>
+                              ) : (
+                                <div className="text-center py-4 text-gray-500">
+                                  <p>No task data available</p>
                                 </div>
                               )}
                             </div>
