@@ -223,7 +223,6 @@ export default function SimplifiedTimerApp() {
     const { ok, data, error } = await authorizedFetch(`/api/tasks?days=${selectedDays}`);
 
     if (ok) {
-      console.log(data)
       setAllData(data.data || []);
       setRunningTimers(data.runningTimers || []);
       setAvailableUsers(data.filters?.users || []);
