@@ -1,6 +1,9 @@
 'use client';
 import { useEffect, useState, useMemo } from 'react';
-import { Clock, Zap, Calendar, ChevronLeft, ChevronRight, RotateCcw, Search, Users, X, Filter, PlusCircle } from 'lucide-react';
+import { Clock, Zap, Calendar,Activity, ChevronLeft, ChevronRight, RotateCcw, Search, Users, X, Filter, PlusCircle } from 'lucide-react';
+import Link from 'next/link';
+
+
 
 export default function WorkloadDashboard() {
   const [data, setData] = useState([]);
@@ -59,6 +62,11 @@ export default function WorkloadDashboard() {
   };
 
   const resetToCurrent = () => setCurrentViewDate(getMonday(new Date()));
+    const logout = () => {
+      localStorage.removeItem(ACCESS_TOKEN_KEY);
+      setAccessToken(null);
+      handleRedirectToClickUp();
+    };
 
   const formatTime = (ms) => {
     if (!ms || ms === 0) return '0h';
@@ -109,35 +117,52 @@ export default function WorkloadDashboard() {
       <div className="max-w-6xl mx-auto">
 
         {/* HEADER */}
-        <header className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-6">
+     <header className="mb-8 pb-6 border-b-2 border-indigo-100">
+        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
           <div>
-            <h1 className="text-3xl font-black text-slate-900 flex items-center">
-              <Zap className="w-8 h-8 mr-2 text-yellow-500 fill-yellow-500" />
-              Team Activity Report
+            <h1 className="text-4xl font-bold text-gray-800 flex items-center gap-3 mb-2">
+              <div className="relative p-2 bg-gradient-to-br from-green-500 to-emerald-600 rounded-xl shadow-lg">
+                <Activity className="w-8 h-8 text-white animate-pulse" />
+                <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full animate-ping"></span>
+              </div>
+              Live Running Timers
             </h1>
-            <p className="text-slate-500 font-medium italic">Track & Created tasks view</p>
+            <p className="text-gray-600 ml-16">Real-time activity monitoring</p>
           </div>
 
-          <div className="flex items-center bg-white p-2 rounded-2xl shadow-sm border border-slate-200 gap-2">
-            <button onClick={prevWeek} className="p-2 hover:bg-slate-100 rounded-xl transition-colors">
-              <ChevronLeft className="w-5 h-5 text-slate-600" />
-            </button>
-            <div className="flex items-center px-4 gap-2 border-x border-slate-100">
-              <Calendar className="w-4 h-4 text-blue-600" />
-              <span className="font-bold text-sm text-slate-700 min-w-[180px] text-center">
-                {currentViewDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}
-                {' - '}
-                {new Date(new Date(currentViewDate).setDate(currentViewDate.getDate() + 6)).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
-              </span>
-            </div>
-            <button onClick={nextWeek} className="p-2 hover:bg-slate-100 rounded-xl transition-colors">
-              <ChevronRight className="w-5 h-5 text-slate-600" />
-            </button>
-            <button onClick={resetToCurrent} title="Current Week" className="p-2 hover:bg-blue-50 hover:text-blue-600 rounded-xl transition-colors">
-              <RotateCcw className="w-4 h-4" />
+          <div className="flex flex-wrap items-center gap-3">
+       
+
+
+            <Link href="/">
+              <button className="flex items-center gap-2 px-5 py-2 bg-white text-gray-700 rounded-xl shadow-md hover:shadow-lg transition-all text-sm font-semibold">
+                <Clock className="w-4 h-4" />
+                Time Tracker
+              </button>
+            </Link>
+             <Link href="/attendance">
+                          <button className="flex items-center gap-2 px-5 py-2 bg-white text-gray-700 rounded-xl shadow-md hover:shadow-lg transition-all text-sm font-semibold">
+
+                            Active Hours
+                          </button>
+                        </Link>
+                        <Link href="/running-timers">
+                          <button className="flex items-center gap-2 px-5 py-2 bg-white text-gray-700 rounded-xl shadow-md hover:shadow-lg transition-all text-sm font-semibold">
+                            <Calendar className="w-4 h-4" />
+                           Running Timers
+                          </button>
+                        </Link>
+
+            <button
+              onClick={logout}
+              className="flex items-center gap-2 px-5 py-2 bg-white text-gray-700 rounded-xl shadow-md hover:shadow-lg transition-all text-sm font-semibold"
+            >
+
+              Logout
             </button>
           </div>
-        </header>
+        </div>
+      </header>
 
         {/* FILTERS SECTION */}
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 mb-6">
