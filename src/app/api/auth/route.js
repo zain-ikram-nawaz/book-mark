@@ -13,7 +13,7 @@ export async function GET(request) {
     }
 
     try {
-        // Exchange code for access token
+        // 1. Exchange code for access token
         const tokenRes = await fetch("https://api.clickup.com/api/v2/oauth/token", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -27,12 +27,13 @@ export async function GET(request) {
         const tokenData = await tokenRes.json();
 
         if (!tokenRes.ok) {
+            // Agar yahan Client Secret Mismatch aye tw check karein ke AWS Dashboard aur ClickUp settings match hain
             return NextResponse.json({ error: tokenData }, { status: tokenRes.status });
         }
 
         const accessToken = tokenData.access_token;
 
-        // 🔥 NOW FETCH USER PROFILE (VERY IMPORTANT)
+        // 2. Fetch User Profile
         const userRes = await fetch("https://api.clickup.com/api/v2/user", {
             headers: { Authorization: accessToken },
         });
@@ -44,15 +45,29 @@ export async function GET(request) {
         }
 
         const clickUpUserId = userData.user.id;
-
         console.log("ClickUp User ID:", clickUpUserId);
 
-        // Send token + user ID back to frontend
-        const redirectUrl = `/?access_token=${accessToken}&cu_user_id=${clickUpUserId}`;
+        // 3. Absolute Redirect Logic (Fix for localhost issue)
+        // Hum REDIRECT_URI (jo ke live URL hai) se base URL nikalenge
+        let baseUrl;
+        try {
+            // Agar REDIRECT_URI = https://site.com/api/callback hai tw ye 'https://site.com' nikal dega
+            const urlObj = new URL(REDIRECT_URI);
+            baseUrl = urlObj.origin;
+        } catch (e) {
+            // Fallback agar variable na mile
+            baseUrl = "";
+        }
 
-        return NextResponse.redirect(new URL(redirectUrl, request.url));
+        const finalRedirectPath = `${baseUrl}/?access_token=${accessToken}&cu_user_id=${clickUpUserId}`;
+
+        console.log("Redirecting to Absolute URL:", finalRedirectPath);
+
+        // Ab ye hamesha live site par jayega, localhost par nahi
+        return NextResponse.redirect(new URL(finalRedirectPath));
 
     } catch (err) {
+        console.error("Auth Error:", err.message);
         return NextResponse.json({ error: err.message }, { status: 500 });
     }
 }
