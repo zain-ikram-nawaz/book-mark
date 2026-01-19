@@ -57,7 +57,7 @@ export async function GET(req) {
       const batch = members.slice(i, i + BATCH_SIZE);
       const batchPromises = batch.map(async (member) => {
         const timeRes = await fetch(
-          `https://api.clickup.com/api/v2/team/${teamId}/time_entries?start_date=${filterStart}&end_date=${filterEnd}&assignee=${member.user.id}`,
+          `https://api.clickup.com/api/v2/team/${teamId}/time_entries?start_date=${filterStart}&end_date=${filterEnd}&assignee=${member.user.id}&include_task_names=true`,
           { headers: { Authorization: token }, cache: 'no-store' }
         );
         const data = await timeRes.json();
@@ -68,11 +68,12 @@ export async function GET(req) {
     }
 
     /* ----------------------------------
-        2. FETCH CREATED TASKS
+        2. FETCH CREATED TASKS (Subtasks included here)
     ---------------------------------- */
-    console.log('🆕 Fetching created tasks...');
+    console.log('🆕 Fetching created tasks with subtasks...');
+    // Added subtasks=true to fetch subtasks created in this period
     const createdTasksRes = await fetch(
-      `https://api.clickup.com/api/v2/team/${teamId}/task?date_created_gt=${filterStart}&date_created_lt=${filterEnd}&include_closed=true`,
+      `https://api.clickup.com/api/v2/team/${teamId}/task?date_created_gt=${filterStart}&date_created_lt=${filterEnd}&include_closed=true&subtasks=true`,
       { headers: { Authorization: token }, cache: 'no-store' }
     );
     const createdTasksData = await createdTasksRes.json();
@@ -135,7 +136,9 @@ export async function GET(req) {
           estimate: task.time_estimate || 0,
           trackedToday: 0,
           createdDate: formatDate(task.date_created),
-          type: 'tracked'
+          type: 'tracked',
+          // Optional: Add parent info if it's a subtask
+          parent: task.parent || null
         };
         day.tasksCount++;
         day.totalEstimate += (task.time_estimate || 0);
@@ -146,7 +149,7 @@ export async function GET(req) {
       users[entry.user.id].weekSummary.totalSpent += duration;
     });
 
-    // Process Created Tasks (Add if not already present in that day)
+    // Process Created Tasks
     createdTasks.forEach(task => {
       const date = formatDate(task.date_created);
       if (!date) return;
@@ -162,7 +165,8 @@ export async function GET(req) {
             estimate: task.time_estimate || 0,
             trackedToday: 0,
             createdDate: date,
-            type: 'created'
+            type: 'created',
+            parent: task.parent || null
           };
           day.tasksCount++;
           day.totalEstimate += (task.time_estimate || 0);
