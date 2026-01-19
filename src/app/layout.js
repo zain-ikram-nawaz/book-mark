@@ -12,8 +12,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata = {
-  title: "TimeSheet App",
-  description: "A simple timesheet application built with Next.js",
+  title: "Tracking app",
+  description: "A simple Tracking application built with Next.js",
+
 };
 
 export default function RootLayout({ children }) {

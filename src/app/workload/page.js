@@ -131,7 +131,7 @@ export default function WorkloadDashboard() {
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-       
+
 
 
             <Link href="/">
@@ -290,38 +290,47 @@ export default function WorkloadDashboard() {
                         </div>
                       </div>
 
-                      {/* Tasks List */}
-                      <div className="grid grid-cols-1 gap-3">
-                        {day.tasks.map((task) => (
-                          <div key={`${day.date}-${task.taskId}`} className="flex items-center justify-between p-4 bg-white border border-slate-100 rounded-2xl hover:border-blue-200 hover:shadow-md transition-all group">
-                            <div className="flex-1">
-                              <div className="flex items-center gap-2 mb-1">
-                                <h4 className="font-bold text-slate-800 group-hover:text-blue-600 transition-colors">{task.taskName}</h4>
-                                {task.type === 'created' && <span className="text-[9px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded font-black uppercase">New Task</span>}
-                              </div>
-                              <div className="flex items-center gap-3">
-                                <span className="text-[10px] font-medium text-slate-400 bg-slate-50 px-2 py-0.5 rounded">{task.listName}</span>
-                                <span className="text-[10px] font-black text-blue-500 uppercase">{task.status}</span>
-                              </div>
-                            </div>
+                  {/* Tasks List */}
+<div className="grid grid-cols-1 gap-3">
+  {day.tasks.map((task) => (
+    <div key={`${day.date}-${task.taskId}`} className="flex items-center justify-between p-4 bg-white border border-slate-100 rounded-2xl hover:border-blue-200 hover:shadow-md transition-all group">
+      <div className="flex-1">
+        <div className="flex items-center gap-2 mb-1">
+          <h4 className="font-bold text-slate-800 group-hover:text-blue-600 transition-colors">{task.taskName}</h4>
+          {task.type === 'created' && <span className="text-[9px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded font-black uppercase">New Task</span>}
+        </div>
+        <div className="flex items-center gap-3">
+          <span className="text-[10px] font-medium text-slate-400 bg-slate-50 px-2 py-0.5 rounded">{task.listName}</span>
+          <span className="text-[10px] font-black text-blue-500 uppercase">{task.status}</span>
+        </div>
+      </div>
 
-                            <div className="text-right flex items-center gap-6">
-                              <div>
-                                <p className="text-xs font-black text-slate-700">{formatTime(task.trackedToday)}</p>
-                                <p className="text-[9px] font-bold text-slate-400 uppercase">Log</p>
-                              </div>
-                              <div className="w-20 hidden sm:block">
-                                <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
-                                  <div
-                                    className={`h-full rounded-full ${task.trackedToday > task.estimate && task.estimate > 0 ? 'bg-red-400' : 'bg-blue-400'}`}
-                                    style={{ width: `${Math.min((task.trackedToday/task.estimate)*100 || 0, 100)}%` }}
-                                  ></div>
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
+      <div className="text-right flex items-center gap-6">
+        {/* Yahan Estimate Time add kiya hai */}
+        <div className="border-r pr-6 border-slate-100">
+          <p className="text-xs font-black text-blue-500">{task.estimate ? formatTime(task.estimate) : '0h'}</p>
+          <p className="text-[9px] font-bold text-slate-400 uppercase">Estimate</p>
+        </div>
+
+        <div>
+          <p className={`text-xs font-black ${task.trackedToday > task.estimate && task.estimate > 0 ? 'text-red-500' : 'text-slate-700'}`}>
+            {formatTime(task.trackedToday)}
+          </p>
+          <p className="text-[9px] font-bold text-slate-400 uppercase">Log</p>
+        </div>
+
+        <div className="w-20 hidden sm:block">
+          <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
+            <div
+              className={`h-full rounded-full ${task.trackedToday > task.estimate && task.estimate > 0 ? 'bg-red-400' : 'bg-blue-400'}`}
+              style={{ width: `${Math.min((task.trackedToday / task.estimate) * 100 || 0, 100)}%` }}
+            ></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  ))}
+</div>
                     </div>
                   ))}
                 </div>
