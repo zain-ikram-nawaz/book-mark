@@ -193,7 +193,7 @@ export default function WorkloadGrid({ data, filters }) {
 
           {/* Timeline Header */}
           <div className="flex sticky top-0 z-10 bg-white/95 backdrop-blur-sm border-b border-slate-200 shadow-sm"
-               style={{ minWidth: dates.length * COL_W }}>
+               style={{ minWidth: dates?.length * COL_W }}>
             {dates?.map((d) => {
               const isToday = d === new Date().toISOString().split('T')[0];
               const dateObj = new Date(d);
