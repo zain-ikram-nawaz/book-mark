@@ -45,7 +45,7 @@ export default function WorkloadGrid({ data, filters }) {
     try {
       let csvRows = ["Task ID,Task Name,Assignee,Start Date,Due Date,Estimated Hours,Spent Hours,Status"];
 
-      if (!tasks || tasks.length === 0) {
+      if (!tasks || tasks?.length === 0) {
         alert("No tasks to download");
         return;
       }
@@ -159,7 +159,7 @@ export default function WorkloadGrid({ data, filters }) {
           <div className="pb-4">
             {filteredMembers.map(m => {
                const leveledTasks = getLeveledTasks(m.user.id);
-               const maxLvl = leveledTasks.length > 0 ? Math.max(...leveledTasks.map(t => t.lvl)) : 0;
+               const maxLvl = leveledTasks?.length > 0 ? Math.max(...leveledTasks.map(t => t.lvl)) : 0;
                const rowHeight = (maxLvl + 1) * (TASK_H + GAP) + 40;
 
                return (
@@ -179,7 +179,7 @@ export default function WorkloadGrid({ data, filters }) {
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-semibold text-slate-700 truncate">{m.user.username}</p>
-                      <p className="text-xs text-slate-400 truncate">{leveledTasks.length} Tasks</p>
+                      <p className="text-xs text-slate-400 truncate">{leveledTasks?.length} Tasks</p>
                     </div>
                   </div>
                 </div>
@@ -194,7 +194,7 @@ export default function WorkloadGrid({ data, filters }) {
           {/* Timeline Header */}
           <div className="flex sticky top-0 z-10 bg-white/95 backdrop-blur-sm border-b border-slate-200 shadow-sm"
                style={{ minWidth: dates.length * COL_W }}>
-            {dates.map((d) => {
+            {dates?.map((d) => {
               const isToday = d === new Date().toISOString().split('T')[0];
               const dateObj = new Date(d);
               const dayName = dateObj.toLocaleDateString('en-US', { weekday: 'short' });
@@ -220,10 +220,10 @@ export default function WorkloadGrid({ data, filters }) {
           </div>
 
           {/* Timeline Body */}
-          <div style={{ minWidth: dates.length * COL_W }}>
+          <div style={{ minWidth: dates?.length * COL_W }}>
             {filteredMembers.map(m => {
               const leveledTasks = getLeveledTasks(m.user.id);
-              const maxLvl = leveledTasks.length > 0 ? Math.max(...leveledTasks.map(t => t.lvl)) : 0;
+              const maxLvl = leveledTasks?.length > 0 ? Math.max(...leveledTasks?.map(t => t.lvl)) : 0;
               const rowHeight = (maxLvl + 1) * (TASK_H + GAP) + 40;
 
               return (
@@ -231,14 +231,14 @@ export default function WorkloadGrid({ data, filters }) {
 
                   {/* Grid Lines */}
                   <div className="absolute inset-0 flex pointer-events-none">
-                    {dates.map(d => (
+                    {dates?.map(d => (
                       <div key={d} style={{ width: COL_W }} className="border-r border-slate-100 h-full"></div>
                     ))}
                   </div>
 
                   {/* Daily Load */}
                   <div className="absolute top-2 left-0 w-full flex pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity">
-                     {dates.map(d => {
+                     {dates?.map(d => {
                         const load = memberStats?.[m.user.id]?.dailyLoad?.[d];
                         if (!load) return <div key={d} style={{ width: COL_W }}></div>;
                         return (
