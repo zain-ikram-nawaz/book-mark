@@ -15,69 +15,87 @@ async function fetchClickUpData(endpoint) {
 export async function GET() {
   try {
     const currentYear = new Date().getFullYear();
+    // POORE SAAL KA RANGE
     const startTs = new Date(currentYear, 0, 1).getTime(); // Jan 1st
     const endTs = new Date(currentYear, 11, 31, 23, 59, 59).getTime(); // Dec 31st
 
+    // 1. Fetch Tasks (Pagination ke saath poore saal ka data)
     let allTasks = [];
     let page = 0;
     let hasMore = true;
-
-    // PAGINATION: Saara data uthane ke liye
-    while (hasMore) {
+    while (hasMore && page < 15) { // Max 1500 tasks tak fetch karega safety ke liye
       const tasksData = await fetchClickUpData(
         `/team/${TEAM_ID}/task?subtasks=true&include_closed=false&due_date_gt=${startTs}&due_date_lt=${endTs}&page=${page}`
       );
       if (tasksData.tasks?.length > 0) {
         allTasks = [...allTasks, ...tasksData.tasks];
         page++;
-      } else {
-        hasMore = false;
-      }
-      if (page > 20) break; // Max 2000 tasks safety
+      } else { hasMore = false; }
     }
 
+    // 2. Fetch Time Entries (Isme agar data bohot zyada hai toh range thodi kam karni pad sakti hai)
+    const timeEntriesData = await fetchClickUpData(
+      `/team/${TEAM_ID}/time_entries?start_date=${startTs}&end_date=${endTs}`
+    );
+
     const teamData = await fetchClickUpData(`/team/${TEAM_ID}`);
-    const processed = processWorkload(allTasks, teamData.team.members, startTs, endTs);
+
+    const processed = processWorkload(
+      allTasks,
+      teamData.team.members,
+      timeEntriesData.data || [],
+      startTs,
+      endTs
+    );
 
     return NextResponse.json(processed);
   } catch (error) {
+    console.error("Backend Error:", error.message);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
 
-function processWorkload(tasks, members, startTs, endTs) {
+function processWorkload(tasks, members, timeEntries, startTs, endTs) {
   const dates = [];
   let curr = new Date(startTs);
   while (curr <= new Date(endTs)) {
-    dates.push(new Date(curr).toISOString().split('T')[0]);
+    dates.push(curr.toISOString().split('T')[0]);
     curr.setDate(curr.getDate() + 1);
   }
 
-  const memberStats = {};
-  members.forEach(m => { memberStats[m.user.id] = { dailyLoad: {} }; });
+  // Tasks ko map karke sirf zaroori aur rounded data nikalna
+  const cleanedTasks = tasks.map(task => {
+    // ClickUp time_estimate milliseconds mein deta hai
+    // Hum use hours mein convert karke 1 decimal tak round kar rahe hain (e.g., 1.2)
+    const hoursEstimate = task.time_estimate
+      ? parseFloat((task.time_estimate / 3600000).toFixed(1))
+      : 0;
 
- tasks.forEach(task => {
-    if (!task.due_date) return;
-    const dKey = new Date(parseInt(task.due_date)).toISOString().split('T')[0];
-
-    const hrs = (task.time_estimate || 0) / 3600000;
-    const spt = (task.time_spent || 0) / 3600000;
-
-    const assigneesCount = task.assignees?.length || 1;
-    // Agar split karna hai toh estimate ko divide karein
-    const splitHrs = hrs / assigneesCount;
-
-    task.assignees?.forEach(a => {
-      if (memberStats[a.id]) {
-        // Yahan splitHrs use karein taake total team capacity sahi rahe
-        memberStats[a.id].dailyLoad[dKey] = (memberStats[a.id].dailyLoad[dKey] || 0) + splitHrs;
-      }
-    });
-
-    // Individual task details ke liye original value hi rakhein
-    task.formattedHours = hrs.toFixed(1) + 'h';
-    task.formattedSpent = spt.toFixed(1) + 'h';
+    return {
+      id: task.id,
+      name: task.name,
+      status: task.status,
+      start_date: task.start_date,
+      due_date: task.due_date,
+      assignees: task.assignees?.map(a => ({ id: a.id })), // Sirf ID kaafi hai frontend ke liye
+      list: task.list, // List filter ke liye zaroori hai
+      time_estimate_hours: hoursEstimate, // Naya field rounded hours ke sath
+    };
   });
 
-  return { dates, members, tasks, memberStats };
+  // Time Entries ko bhi clean karna
+  const cleanedTimeEntries = timeEntries.map(entry => ({
+    id: entry.id,
+    task_id: entry.task?.id,
+    user_id: entry.user?.id,
+    start: entry.start,
+    duration_hours: parseFloat((parseInt(entry.duration) / 3600000).toFixed(1))
+  }));
+
+  return {
+    dates,
+    members,
+    tasks: cleanedTasks,
+    timeEntries: cleanedTimeEntries
+  };
 }
