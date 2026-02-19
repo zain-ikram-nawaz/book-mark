@@ -6,26 +6,34 @@ const COL_W = 120;
 const TASK_H = 38;
 const GAP = 8;
 const SIDEBAR_W = 260;
-const HOLIDAYS = ['2026-01-01', '2026-02-23'];
-const WEEK_DAYS = [1, 2, 3, 4, 5, 6];
 
-// --- HELPERS ---
-const toUTCDate = (ts) => {
+const toLocalDateOnly = (ts) => {
   if (!ts) return null;
-  const d = new Date(parseInt(ts));
-  // Pakistan offset (+5) sync
-  const localDate = new Date(d.getTime() + (5 * 60 * 60 * 1000));
-  return new Date(Date.UTC(localDate.getUTCFullYear(), localDate.getUTCMonth(), localDate.getUTCDate()));
+  const d = new Date(Number(ts));
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
 };
 
+// Round to 1 decimal place
+function round1dec(num) {
+  return Math.round(num * 10) / 10;
+}
+
 function calculateTaskPosition(task, viewStartStr) {
-  const start = toUTCDate(task.start_date || task.due_date);
-  const end = toUTCDate(task.due_date);
-  const vStart = new Date(viewStartStr + 'T00:00:00Z');
+  const start = toLocalDateOnly(task.start_date || task.due_date);
+  const end = toLocalDateOnly(task.due_date);
+  const vStartParts = viewStartStr.split('-');
+  const vStart = new Date(
+    Number(vStartParts[0]),
+    Number(vStartParts[1]) - 1,
+    Number(vStartParts[2])
+  );
   const oneDayMs = 24 * 60 * 60 * 1000;
-  const diffDays = Math.round((start.getTime() - vStart.getTime()) / oneDayMs);
-  const durationDays = Math.round((end.getTime() - start.getTime()) / oneDayMs) + 1;
-  return { left: (diffDays * COL_W) + 5, width: Math.max((durationDays * COL_W) - 10, 20) };
+  const diffDays = Math.floor((start - vStart) / oneDayMs);
+  const durationDays = Math.floor((end - start) / oneDayMs) + 1;
+  return {
+    left: (diffDays * COL_W) + 5,
+    width: Math.max((durationDays * COL_W) - 10, 20)
+  };
 }
 
 const fetcher = url => fetch(url).then(res => res.json());
@@ -37,7 +45,10 @@ export default function WorkloadPage() {
   const [filters, setFilters] = useState({ memberId: 'all', listId: 'all' });
 
   useEffect(() => {
-    fetcher('/api/new-workload').then(setData).catch(setError).finally(() => setLoading(false));
+    fetcher('/api/new-workload')
+      .then(setData)
+      .catch(setError)
+      .finally(() => setLoading(false));
   }, []);
 
   const uniqueLists = useMemo(() => {
@@ -93,7 +104,13 @@ export default function WorkloadPage() {
 function WorkloadGrid({ data, filters }) {
   const { dates = [], members = [], tasks = [] } = data;
   const scrollContainerRef = useRef(null);
-  const todayPK = useMemo(() => new Date(new Date().getTime() + (5 * 60 * 60 * 1000)).toISOString().split('T')[0], []);
+
+  const todayPK = useMemo(() => {
+    const today = new Date();
+    return today.getFullYear() + '-' +
+      String(today.getMonth() + 1).padStart(2, '0') + '-' +
+      String(today.getDate()).padStart(2, '0');
+  }, []);
 
   const filteredTasks = useMemo(() => {
     let ts = [...tasks];
@@ -106,56 +123,74 @@ function WorkloadGrid({ data, filters }) {
     return members.filter(m => m.user.id.toString() === filters.memberId.toString());
   }, [members, filters.memberId]);
 
-const calculatedStats = useMemo(() => {
+  const calculatedStats = useMemo(() => {
     const stats = {};
+
+    // Initialize
     filteredMembers.forEach(m => {
       stats[m.user.id] = { plannedLoad: {} };
-      dates.forEach(d => stats[m.user.id].plannedLoad[d] = 0);
+      dates.forEach(d => {
+        stats[m.user.id].plannedLoad[d] = 0;
+      });
     });
 
     filteredTasks.forEach(task => {
-      if (!task.due_date || !task.assignees?.length) return;
-      const tStart = toUTCDate(task.start_date || task.due_date);
-      const tEnd = toUTCDate(task.due_date);
+      if (!task.due_date || !task.assignees?.length || !task.time_estimate_hours) return;
 
+      const tStart = toLocalDateOnly(task.start_date || task.due_date);
+      const tEnd = toLocalDateOnly(task.due_date);
+
+      // Get working days (Mon-Sat, no Sunday)
       let workingDays = [];
       let runner = new Date(tStart);
+
       while (runner <= tEnd) {
-        const dStr = runner.toISOString().split('T')[0];
-        const day = runner.getUTCDay();
-        // Monday(1) to Saturday(6)
-        if (WEEK_DAYS.includes(day) && !HOLIDAYS.includes(dStr)) workingDays.push(dStr);
+        const dStr = runner.getFullYear() + '-' +
+          String(runner.getMonth() + 1).padStart(2, '0') + '-' +
+          String(runner.getDate()).padStart(2, '0');
+
+        const dayOfWeek = runner.getDay();
+        if (dayOfWeek !== 0) { // Skip Sunday only
+          workingDays.push(dStr);
+        }
         runner.setUTCDate(runner.getUTCDate() + 1);
       }
 
       if (workingDays.length === 0) return;
 
-      // Backend se aya hua estimate (already in hours)
-      const totalHours = task.time_estimate_hours || 0;
-      const dailyLoad = totalHours / workingDays.length;
+      // Calculate per day per user - ROUNDED to 1 decimal
+      const totalHours = task.time_estimate_hours;
+      const assigneeCount = task.assignees.length;
 
-      workingDays.forEach(day => {
+      // Per user total (rounded)
+      const perUserTotal = round1dec(totalHours / assigneeCount);
+
+      // Per day per user - EXPLICITLY ROUNDED to 1 decimal (yeh single task ki value hai)
+      const perDayPerUser = round1dec(perUserTotal / workingDays.length);
+
+      // Add SAME rounded value to every working day for every assignee
+      workingDays.forEach((day) => {
         task.assignees.forEach(assignee => {
-          if (stats[assignee.id]?.plannedLoad.hasOwnProperty(day)) {
-            // FIX: Pehle value ko scale karein, phir round karein, phir wapas scale down karein
-            // Isse 0.1 + 0.2 hamesha 0.3 hi rahega, 0.3000004 nahi banega.
-            const currentVal = stats[assignee.id].plannedLoad[day];
-            stats[assignee.id].plannedLoad[day] = Math.round((currentVal + dailyLoad) * 100) / 100;
-          }
+          if (!stats[assignee.id]?.plannedLoad.hasOwnProperty(day)) return;
+          // Yahan bhi round karte hain addition ke baad
+          stats[assignee.id].plannedLoad[day] = round1dec(stats[assignee.id].plannedLoad[day] + perDayPerUser);
         });
       });
-      task.dailyPlanned = dailyLoad.toFixed(1);
+
+      // Store for display (already rounded)
+      task.dailyPlannedHours = perDayPerUser.toFixed(1);
     });
+
     return stats;
   }, [filteredTasks, filteredMembers, dates]);
 
   const getLeveledTasks = (mId) => {
     const mTasks = filteredTasks.filter(t => t.assignees?.some(a => a.id === mId))
-      .sort((a, b) => toUTCDate(a.start_date || a.due_date).getTime() - toUTCDate(b.start_date || b.due_date).getTime());
+      .sort((a, b) => toLocalDateOnly(a.start_date || a.due_date).getTime() - toLocalDateOnly(b.start_date || b.due_date).getTime());
     const levels = [];
     return mTasks.map(t => {
-      const s = toUTCDate(t.start_date || t.due_date).getTime();
-      const e = toUTCDate(t.due_date).getTime();
+      const s = toLocalDateOnly(t.start_date || t.due_date).getTime();
+      const e = toLocalDateOnly(t.due_date).getTime();
       let lvl = 0;
       while (levels[lvl] && levels[lvl] > s) lvl++;
       levels[lvl] = e;
@@ -167,8 +202,10 @@ const calculatedStats = useMemo(() => {
     const totals = {};
     dates.forEach(d => {
       let sum = 0;
-      filteredMembers.forEach(m => sum += calculatedStats[m.user.id]?.plannedLoad[d] || 0);
-      totals[d] = sum.toFixed(1);
+      filteredMembers.forEach(m => {
+        sum += calculatedStats[m.user.id]?.plannedLoad[d] || 0;
+      });
+      totals[d] = round1dec(sum).toFixed(1);
     });
     return totals;
   }, [dates, filteredMembers, calculatedStats]);
@@ -177,18 +214,22 @@ const calculatedStats = useMemo(() => {
     <div className="flex flex-1 overflow-hidden">
       <div ref={scrollContainerRef} className="flex-1 overflow-auto custom-scrollbar">
         <div style={{ width: (dates.length * COL_W) + SIDEBAR_W }} className="relative min-h-full bg-white">
-
           <div className="flex sticky top-0 z-[60] bg-white border-b border-slate-200">
             <div className="w-[260px] p-5 border-r border-slate-200 sticky left-0 bg-white z-[61]">
               <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Resource</span>
             </div>
             {dates.map(d => {
-              const dateObj = new Date(d + 'T00:00:00Z');
+              const parts = d.split('-');
+              const dateObj = new Date(parts[0], parts[1] - 1, parts[2]);
               const isToday = d === todayPK;
+              const isSunday = dateObj.getDay() === 0;
+
               return (
-                <div key={d} style={{ width: COL_W }} className={`shrink-0 border-r border-slate-100 py-3 flex flex-col items-center ${isToday ? 'bg-indigo-50/50 relative shadow-[inset_0_-2px_0_#4f46e5]' : ''}`}>
-                  <span className={`text-[8px] font-bold uppercase ${isToday ? 'text-indigo-600' : 'text-slate-400'}`}>{dateObj.toLocaleDateString('en-US', { weekday: 'short', timeZone: 'UTC' })}</span>
-                  <span className={`text-[13px] font-black ${isToday ? 'text-indigo-700' : 'text-slate-600'}`}>{dateObj.getUTCDate()}</span>
+                <div key={d} style={{ width: COL_W }} className={`shrink-0 border-r border-slate-100 py-3 flex flex-col items-center ${isToday ? 'bg-indigo-50/50 relative shadow-[inset_0_-2px_0_#4f46e5]' : ''} ${isSunday ? 'bg-slate-100/50' : ''}`}>
+                  <span className={`text-[8px] font-bold uppercase ${isToday ? 'text-indigo-600' : isSunday ? 'text-slate-400' : 'text-slate-500'}`}>
+                    {dateObj.toLocaleDateString('en-US', { weekday: 'short' })}
+                  </span>
+                  <span className={`text-[13px] font-black ${isToday ? 'text-indigo-700' : isSunday ? 'text-slate-400' : 'text-slate-600'}`}>{dateObj.getDate()}</span>
                   <div className="mt-1 text-[9px] font-bold text-indigo-500/80">{dailyTeamTotal[d]}h</div>
                 </div>
               );
@@ -210,14 +251,21 @@ const calculatedStats = useMemo(() => {
 
                 <div className="relative flex flex-1">
                   {dates.map(d => {
+                    const parts = d.split('-');
+                    const dateObj = new Date(parts[0], parts[1] - 1, parts[2]);
+                    const isSunday = dateObj.getDay() === 0;
                     const scheduled = calculatedStats[m.user.id]?.plannedLoad[d] || 0;
                     const isToday = d === todayPK;
+
                     return (
-                      <div key={d} style={{ width: COL_W }} className={`border-r border-slate-50/50 h-full flex flex-col items-center pt-2 ${isToday ? 'bg-indigo-50/5' : ''}`}>
-                        {scheduled > 0 && (
+                      <div key={d} style={{ width: COL_W }} className={`border-r border-slate-50/50 h-full flex flex-col items-center pt-2 ${isToday ? 'bg-indigo-50/5' : ''} ${isSunday ? 'bg-slate-100/30' : ''}`}>
+                        {scheduled > 0 && !isSunday && (
                           <div className={`text-[9px] font-black px-2 py-0.5 rounded-full z-10 border shadow-sm ${scheduled > 8 ? 'bg-red-500 text-white' : 'bg-indigo-50 text-indigo-700 border-indigo-100'}`}>
                             {scheduled.toFixed(1)}h
                           </div>
+                        )}
+                        {isSunday && (
+                          <div className="text-[8px] text-slate-300 font-bold mt-1">OFF</div>
                         )}
                       </div>
                     );
@@ -229,13 +277,15 @@ const calculatedStats = useMemo(() => {
                       return (
                         <div key={t.id}
                           style={{
-                            left: pos.left, width: pos.width, top: t.lvl * (TASK_H + GAP),
+                            left: pos.left,
+                            width: pos.width,
+                            top: t.lvl * (TASK_H + GAP),
                             backgroundColor: t.status?.color || '#cbd5e1'
                           }}
                           className="absolute h-[34px] rounded border border-black/5 flex items-center px-3 pointer-events-auto cursor-pointer shadow-sm hover:brightness-95 transition-all"
                         >
                           <div className="text-[9px] font-bold text-white truncate uppercase tracking-tight">
-                            {t.name} <span className="opacity-70 text-[7px] ml-1">({t.dailyPlanned}h)</span>
+                            {t.name} <span className="opacity-70 text-[7px] ml-1">({t.dailyPlannedHours}h)</span>
                           </div>
                         </div>
                       );
