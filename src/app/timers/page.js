@@ -196,7 +196,7 @@ export default function SimplifiedTimerApp() {
   const [availableFolders, setAvailableFolders] = useState([]);
   const [stats, setStats] = useState(null);
 
-  const [selectedDays, setSelectedDays] = useState(3);
+  const [selectedDays, setSelectedDays] = useState(1);
   const [selectedUsers, setSelectedUsers] = useState([]);
   const [selectedFolders, setSelectedFolders] = useState([]);
   const [selectedDeviceFilter, setSelectedDeviceFilter] = useState('all'); // ✅ NEW
