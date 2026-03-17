@@ -25,6 +25,72 @@ function detectFakeTime(entry) {
   };
 }
 
+// Add this function to enrich task data
+async function enrichTaskData(taskId, token) {
+  if (!taskId) return {};
+
+  try {
+    const taskRes = await fetch(`https://api.clickup.com/api/v2/task/${taskId}`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+
+    if (!taskRes.ok) return {};
+
+    const task = await taskRes.json();
+
+    return {
+      taskStatus: task.status?.status || "No Status",
+      taskStatusColor: task.status?.color || "#808080",
+      priority: task.priority?.priority || "No Priority",
+      priorityColor: task.priority?.color || "#808080",
+      taskDescription: task.description || "",
+      taskTextContent: task.text_content || "",
+      taskCustomId: task.custom_id || null,
+      taskDateCreated: task.date_created ? new Date(Number(task.date_created)).toISOString() : null,
+      taskDateUpdated: task.date_updated ? new Date(Number(task.date_updated)).toISOString() : null,
+      taskDueDate: task.due_date ? new Date(Number(task.due_date)).toISOString() : null,
+      taskStartDate: task.start_date ? new Date(Number(task.start_date)).toISOString() : null,
+      taskCreator: task.creator?.username || task.creator?.email || "Unknown",
+      taskAssignees: task.assignees?.map(a => ({
+        id: a.id,
+        username: a.username || a.email,
+        email: a.email,
+        profilePicture: a.profilePicture
+      })) || [],
+      taskTags: task.tags?.map(tag => ({
+        name: tag.name,
+        tagFg: tag.tag_fg,
+        tagBg: tag.tag_bg
+      })) || [],
+      taskPoints: task.points || null,
+      taskTimeEstimate: task.time_estimate || null,
+      taskTimeSpent: task.time_spent || 0,
+      taskOrderIndex: task.orderindex || null,
+      taskCustomFields: task.custom_fields?.map(field => ({
+        id: field.id,
+        name: field.name,
+        type: field.type,
+        value: field.value,
+        typeConfig: field.type_config
+      })) || [],
+      isSubtask: !!task.parent,
+      parentTaskId: task.parent || null,
+      taskWatchers: task.watchers?.map(w => w.username || w.email) || [],
+      taskChecklists: task.checklists?.length || 0,
+      taskDependencies: task.dependencies?.length || 0,
+      taskLinkedTasks: task.linked_tasks?.length || 0,
+      taskArchived: task.archived || false,
+      taskPermission: task.permission || {},
+      taskTeamId: task.team_id || null,
+      taskProject: task.project || null,
+      taskSubtasks: task.subtasks?.length || 0
+    };
+  } catch (error) {
+    console.log(`Error fetching task ${taskId}:`, error.message);
+    return {};
+  }
+}
+
 export async function GET(request) {
   const requestStartTime = Date.now();
 
@@ -63,7 +129,6 @@ export async function GET(request) {
       }, { status: 404 });
     }
 
-
     const activeWorkspace = workspacesData.teams.find(team =>
       team.members && team.members.length > 0
     ) || workspacesData.teams[0];
@@ -73,8 +138,6 @@ export async function GET(request) {
       headers: { Authorization: `Bearer ${token}` }
     });
 
-
-
     const userData = await userRes.json();
     const currentUserId = userData.user.id;
 
@@ -83,6 +146,7 @@ export async function GET(request) {
     const startDate = new Date();
     startDate.setDate(now.getDate() - days);
     startDate.setHours(0, 0, 0, 0);
+
     // Fetch team members to check user role
     console.log("\n--- Fetching Team Members ---");
     const membersRes = await fetch(`https://api.clickup.com/api/v2/team/${teamId}`, {
@@ -224,7 +288,35 @@ export async function GET(request) {
       });
     }
 
-    // ✅ Process all time entries with task URL
+    // ✅ Enrich task data
+    console.log("--- Enriching Task Data ---");
+
+    // Get unique task IDs to avoid duplicate API calls
+    const uniqueTaskIds = [...new Set(allTimeEntries.map(entry => entry.task?.id).filter(Boolean))];
+
+    // Batch fetch task details (10 at a time to avoid rate limits)
+    const taskDetailsMap = new Map();
+    const batchSize = 10;
+
+    for (let i = 0; i < uniqueTaskIds.length; i += batchSize) {
+      const taskBatch = uniqueTaskIds.slice(i, i + batchSize);
+
+      const taskPromises = taskBatch.map(taskId =>
+        enrichTaskData(taskId, token).then(data => ({ taskId, data }))
+      );
+
+      const batchResults = await Promise.all(taskPromises);
+      batchResults.forEach(({ taskId, data }) => {
+        taskDetailsMap.set(taskId, data);
+      });
+
+      // Small delay to respect rate limits
+      if (i + batchSize < uniqueTaskIds.length) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+    }
+
+    // ✅ Process all time entries with enriched task data
     const processedTimers = allTimeEntries.map(entry => {
       const fakeCheck = detectFakeTime(entry);
       const duration = Number(entry.duration || 0);
@@ -234,33 +326,44 @@ export async function GET(request) {
 
       // ✅ Generate task URL - ClickUp standard format
       const taskUrl = entry.task?.url || (entry.task?.id ? `https://app.clickup.com/t/${entry.task.id}` : null);
-// console.log(taskUrl,"url")
+
+      // Get enriched task data
+      const enrichedTask = taskDetailsMap.get(entry.task?.id) || {};
+
       return {
+        // User & Time Data
         user: entry.user?.username || entry.user?.email || "Unknown",
         userId: entry.user?.id,
-        taskId: entry.task?.id,
-        taskName: entry.task?.name || "Unknown Task",
-        taskUrl: taskUrl, // ✅ Task URL added
-        listId: entry.task?.list?.id,
-        listName: entry.task?.list?.name,
-        folderId: entry.task?.folder?.id,
-        folderName: entry.task?.folder?.name || "No Folder",
-        spaceId: entry.task?.space?.id,
-        spaceName: entry.task?.space?.name,
         startTime: start,
         endTime: end,
         duration: duration,
         status: isRunning ? "running" : "stopped",
+        isRunning: isRunning,
+        date: new Date(start).toISOString().split('T')[0],
+        startFormatted: new Date(start).toLocaleString(),
+        endFormatted: new Date(end).toLocaleString(),
+
+        // Fake Detection
         isFake: fakeCheck.isFake,
         isMobile: fakeCheck.isMobile,
         isDesktop: fakeCheck.isDesktop,
         isReal: fakeCheck.isReal,
         source: fakeCheck.source,
         deviceType: fakeCheck.deviceType,
-        isRunning: isRunning,
-        date: new Date(start).toISOString().split('T')[0],
-        startFormatted: new Date(start).toLocaleString(),
-        endFormatted: new Date(end).toLocaleString(),
+
+        // Basic Task Info (from time entry)
+        taskId: entry.task?.id,
+        taskName: entry.task?.name || "Unknown Task",
+        taskUrl: taskUrl,
+        listId: entry.task?.list?.id,
+        listName: entry.task?.list?.name,
+        folderId: entry.task?.folder?.id,
+        folderName: entry.task?.folder?.name || "No Folder",
+        spaceId: entry.task?.space?.id,
+        spaceName: entry.task?.space?.name,
+
+        // ✅ ENRICHED TASK DATA - All the fields you wanted
+        ...enrichedTask
       };
     });
 
@@ -284,16 +387,23 @@ export async function GET(request) {
       .map(str => JSON.parse(str))
       .sort((a, b) => a.name.localeCompare(b.name));
 
-    // Calculate statistics
+    // Calculate enhanced statistics
     const stats = {
       totalEntries: processedTimers.length,
       totalDuration: processedTimers.reduce((sum, t) => sum + t.duration, 0),
       totalHours: (processedTimers.reduce((sum, t) => sum + t.duration, 0) / (1000 * 60 * 60)).toFixed(2),
       uniqueUsers: uniqueUsers.length,
+      uniqueTasks: uniqueTaskIds.length,
       fakeEntries: fakeTimers.length,
       mobileEntries: mobileTimers.length,
       desktopEntries: desktopTimers.length,
       realEntries: processedTimers.filter(t => t.isReal).length,
+
+      // New stats from enriched data
+      tasksWithEstimates: processedTimers.filter(t => t.taskTimeEstimate).length,
+      tasksWithDueDate: processedTimers.filter(t => t.taskDueDate).length,
+      highPriorityTasks: processedTimers.filter(t => t.priority === "urgent" || t.priority === "high").length,
+      uniqueTags: [...new Set(processedTimers.flatMap(t => t.taskTags?.map(tag => tag.name) || []))].length
     };
 
     const totalTime = Date.now() - requestStartTime;
@@ -304,7 +414,13 @@ export async function GET(request) {
       runningTimers: runningTimers,
       filters: {
         users: uniqueUsers,
-        folders: uniqueFolders
+        folders: uniqueFolders,
+
+        // New filters from enriched data
+        priorities: [...new Set(processedTimers.map(t => t.priority).filter(Boolean))],
+        statuses: [...new Set(processedTimers.map(t => t.taskStatus).filter(Boolean))],
+        tags: [...new Set(processedTimers.flatMap(t => t.taskTags?.map(tag => tag.name) || []))],
+        assignees: [...new Set(processedTimers.flatMap(t => t.taskAssignees?.map(a => a.username) || []))]
       },
       stats: stats,
       dateRange: {
@@ -314,7 +430,8 @@ export async function GET(request) {
       },
       meta: {
         processingTime: `${totalTime}ms`,
-        userRole: isAdmin ? 'admin' : (isGuest ? 'guest' : 'member')
+        userRole: isAdmin ? 'admin' : (isGuest ? 'guest' : 'member'),
+        tasksEnriched: uniqueTaskIds.length
       }
     });
 

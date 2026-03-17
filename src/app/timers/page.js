@@ -205,14 +205,14 @@ export default function SimplifiedTimerApp() {
   const [apiStatus, setApiStatus] = useState({ loading: false, error: null });
   const [autoRefresh, setAutoRefresh] = useState(false);
   const [currentTime, setCurrentTime] = useState(Date.now());
-
+  console.log(allData, "data")
   // Update current time every second
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setCurrentTime(Date.now());
-    }, 1000);
-    return () => clearInterval(interval);
-  }, []);
+  // useEffect(() => {
+  //   const interval = setInterval(() => {
+  //     setCurrentTime(Date.now());
+  //   }, 1000);
+  //   return () => clearInterval(interval);
+  // }, []);
 
   // Fetch data
   const fetchData = useCallback(async () => {
@@ -260,7 +260,7 @@ export default function SimplifiedTimerApp() {
 
     let dateFilterStart;
 
-    switch(selectedDays) {
+    switch (selectedDays) {
       case 1:
         dateFilterStart = startOfToday.getTime();
         break;
@@ -287,7 +287,7 @@ export default function SimplifiedTimerApp() {
     // ✅ Device Filter
     if (selectedDeviceFilter !== 'all') {
       filtered = filtered.filter(item => {
-        switch(selectedDeviceFilter) {
+        switch (selectedDeviceFilter) {
           case 'real':
             return item.isReal;
           case 'fake':
@@ -445,10 +445,10 @@ export default function SimplifiedTimerApp() {
                 Active Hours
               </button>
             </Link>
-             <Link href="/workload">
+            <Link href="/workload">
               <button className="flex items-center gap-2 px-5 py-2 bg-white text-gray-700 rounded-xl shadow-md hover:shadow-lg transition-all text-sm font-semibold">
                 <Calendar className="w-4 h-4" />
-             Workload
+                Workload
               </button>
             </Link>
 
@@ -655,11 +655,10 @@ export default function SimplifiedTimerApp() {
               return (
                 <div
                   key={`running_${timer.taskId}_${timer.userId}_${index}`}
-                  className={`rounded-xl shadow-xl p-4 border transition-all ${
-                    timer.isFake
+                  className={`rounded-xl shadow-xl p-4 border transition-all ${timer.isFake
                       ? 'bg-gradient-to-br from-red-900 via-red-800 to-red-900 border-red-400/30'
                       : 'bg-gradient-to-br from-gray-900 via-[#111827] to-[#1e2a4a] border-green-400/30 hover:border-green-400/50'
-                  }`}
+                    }`}
                 >
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-2">
@@ -740,78 +739,185 @@ export default function SimplifiedTimerApp() {
       <div className="bg-white rounded-2xl shadow-lg overflow-hidden border border-gray-100">
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gradient-to-r from-gray-50 to-gray-100">
-              <tr>
-                <th className="px-6 py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">User</th>
-                <th className="px-6 py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">Task</th>
-                <th className="px-6 py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">Start</th>
-                <th className="px-6 py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">Duration</th>
-                <th className="px-6 py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">Device</th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-100">
-              {filteredData.length === 0 ? (
-                <tr>
-                  <td colSpan="5" className="px-6 py-12 text-center">
-                    <div className="flex flex-col items-center gap-3">
-                      <Clock className="w-12 h-12 text-gray-400" />
-                      <p className="text-gray-600 font-medium">No entries found</p>
-                      <p className="text-sm text-gray-500">Try adjusting your filters</p>
-                    </div>
-                  </td>
-                </tr>
+           <thead className="bg-gradient-to-r from-gray-50 to-gray-100">
+  <tr>
+    <th className="px-6 py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">User</th>
+    <th className="px-6 py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">Task</th>
+    <th className="px-6 py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">Priority</th>
+    <th className="px-6 py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">Status</th>
+    <th className="px-6 py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">Assignees</th>
+    <th className="px-6 py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">Start</th>
+    <th className="px-6 py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">Duration</th>
+    <th className="px-6 py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">Device</th>
+  </tr>
+</thead>
+          <tbody className="bg-white divide-y divide-gray-100">
+  {filteredData.length === 0 ? (
+    <tr>
+      <td colSpan="8" className="px-6 py-12 text-center">
+        <div className="flex flex-col items-center gap-3">
+          <Clock className="w-12 h-12 text-gray-400" />
+          <p className="text-gray-600 font-medium">No entries found</p>
+          <p className="text-sm text-gray-500">Try adjusting your filters</p>
+        </div>
+      </td>
+    </tr>
+  ) : (
+    filteredData.map((timer, index) => {
+      const badge = getDeviceBadge(timer);
+      return (
+        <tr
+          key={`${timer.taskId}_${timer.userId}_${index}`}
+          className={`hover:bg-gray-50 transition ${timer.isFake ? 'bg-red-50 border-l-4 border-l-red-400' : ''}`}
+        >
+          {/* User Column */}
+          <td className="px-6 py-4 whitespace-nowrap">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-full flex items-center justify-center text-white text-xs font-bold shadow">
+                {timer.user.charAt(0).toUpperCase()}
+              </div>
+              <span className="text-sm font-medium text-gray-900">{timer.user}</span>
+            </div>
+          </td>
+
+          {/* Task Column with Tags */}
+          <td className="px-6 py-4 max-w-xs">
+            <div className="space-y-2">
+              {timer.taskUrl ? (
+                <a
+                  href={timer.taskUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={`font-medium text-sm hover:underline flex items-center gap-1 ${timer.isFake ? 'text-red-600 hover:text-red-800' : 'text-indigo-600 hover:text-indigo-800'}`}
+                >
+                  <span className="truncate">{timer.taskName}</span>
+                  <ExternalLink className="w-3 h-3 flex-shrink-0" />
+                </a>
               ) : (
-                filteredData.map((timer, index) => {
-                  const badge = getDeviceBadge(timer);
-                  return (
-                    <tr
-                      key={`${timer.taskId}_${timer.userId}_${index}`}
-                      className={`hover:bg-gray-50 transition ${timer.isFake ? 'bg-red-50 border-l-4 border-l-red-400' : ''}`}
-                    >
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-full flex items-center justify-center text-white text-xs font-bold shadow">
-                            {timer.user.charAt(0).toUpperCase()}
-                          </div>
-                          <span className="text-sm font-medium text-gray-900">{timer.user}</span>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 max-w-xs">
-                        {timer.taskUrl ? (
-                          <a
-                            href={timer.taskUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className={`font-medium text-sm hover:underline flex items-center gap-1 ${
-                              timer.isFake ? 'text-red-600 hover:text-red-800' : 'text-indigo-600 hover:text-indigo-800'
-                            }`}
-                          >
-                            <span className="truncate">{timer.taskName}</span>
-                            <ExternalLink className="w-3 h-3 flex-shrink-0" />
-                          </a>
-                        ) : (
-                          <span className={`text-sm font-medium truncate block ${timer.isFake ? 'text-red-600' : 'text-gray-700'}`}>
-                            {timer.taskName}
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                        {new Date(timer.startTime).toLocaleString()}
-                      </td>
-                      <td className={`px-6 py-4 whitespace-nowrap text-sm font-bold ${timer.isFake ? 'text-red-600' : 'text-gray-900'}`}>
-                        {formatDuration(timer.duration)}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-xs">
-                        <span className={`font-bold px-3 py-1 rounded-full flex items-center gap-1 w-fit ${badge.className}`}>
-                          {badge.icon}
-                          {badge.label}
-                        </span>
-                      </td>
-                    </tr>
-                  );
-                })
+                <span className={`text-sm font-medium truncate block ${timer.isFake ? 'text-red-600' : 'text-gray-700'}`}>
+                  {timer.taskName}
+                </span>
               )}
-            </tbody>
+
+              {/* Tags */}
+              {timer.taskTags && timer.taskTags.length > 0 && (
+                <div className="flex flex-wrap gap-1">
+                  {timer.taskTags.slice(0, 3).map((tag, tagIndex) => (
+                    <span
+                      key={tagIndex}
+                      className="px-2 py-1 text-xs rounded-full font-medium"
+                      style={{
+                        backgroundColor: tag.tagBg || '#f3f4f6',
+                        color: tag.tagFg || '#374151'
+                      }}
+                    >
+                      {tag.name}
+                    </span>
+                  ))}
+                  {timer.taskTags.length > 3 && (
+                    <span className="px-2 py-1 text-xs rounded-full bg-gray-100 text-gray-600 font-medium">
+                      +{timer.taskTags.length - 3}
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+          </td>
+
+          {/* Priority Column */}
+          <td className="px-6 py-4 whitespace-nowrap">
+            {timer.priority && timer.priority !== "No Priority" ? (
+              <span
+                className="px-3 py-1 text-xs font-bold rounded-full uppercase tracking-wide"
+                style={{
+                  backgroundColor: timer.priorityColor || '#f3f4f6',
+                  color: '#ffffff'
+                }}
+              >
+                {timer.priority}
+              </span>
+            ) : (
+              <span className="text-xs text-gray-400">No Priority</span>
+            )}
+          </td>
+
+          {/* Status Column */}
+          <td className="px-6 py-4 whitespace-nowrap">
+            {timer.taskStatus && timer.taskStatus !== "No Status" ? (
+              <span
+                className="px-3 py-1 text-xs font-semibold rounded-full"
+                style={{
+                  backgroundColor: timer.taskStatusColor || '#f3f4f6',
+                  color: '#ffffff'
+                }}
+              >
+                {timer.taskStatus}
+              </span>
+            ) : (
+              <span className="text-xs text-gray-400">No Status</span>
+            )}
+          </td>
+
+          {/* Assignees Column */}
+          <td className="px-6 py-4 whitespace-nowrap">
+            {timer.taskAssignees && timer.taskAssignees.length > 0 ? (
+              <div className="flex items-center gap-1">
+                {timer.taskAssignees.slice(0, 3).map((assignee, assigneeIndex) => (
+                  <div
+                    key={assigneeIndex}
+                    className="w-6 h-6 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white text-xs font-bold shadow-sm"
+                    title={assignee.username}
+                  >
+                    {assignee.username.charAt(0).toUpperCase()}
+                  </div>
+                ))}
+                {timer.taskAssignees.length > 3 && (
+                  <div className="w-6 h-6 bg-gray-300 rounded-full flex items-center justify-center text-gray-600 text-xs font-bold">
+                    +{timer.taskAssignees.length - 3}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <span className="text-xs text-gray-400">Unassigned</span>
+            )}
+          </td>
+
+          {/* Start Time Column */}
+          <td className="px-6 py-4 whitespace-nowrap">
+            <div className="text-sm text-gray-600">
+              {new Date(timer.startTime).toLocaleString()}
+            </div>
+            {timer.taskDueDate && (
+              <div className="text-xs text-red-500 mt-1">
+                Due: {new Date(timer.taskDueDate).toLocaleDateString()}
+              </div>
+            )}
+          </td>
+
+          {/* Duration Column */}
+          <td className={`px-6 py-4 whitespace-nowrap ${timer.isFake ? 'text-red-600' : 'text-gray-900'}`}>
+            <div className="text-sm font-bold">
+              {formatDuration(timer.duration)}
+            </div>
+            {timer.taskTimeEstimate && (
+              <div className="text-xs text-gray-500 mt-1">
+                Est: {formatDuration(timer.taskTimeEstimate)}
+              </div>
+            )}
+          </td>
+
+          {/* Device Column */}
+          <td className="px-6 py-4 whitespace-nowrap text-xs">
+            <span className={`font-bold px-3 py-1 rounded-full flex items-center gap-1 w-fit ${badge.className}`}>
+              {badge.icon}
+              {badge.label}
+            </span>
+          </td>
+        </tr>
+      );
+    })
+  )}
+</tbody>
           </table>
         </div>
       </div>

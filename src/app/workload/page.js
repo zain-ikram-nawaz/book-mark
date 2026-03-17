@@ -203,7 +203,7 @@ export default function WorkloadDashboard() {
                             className="w-5 h-5 text-blue-600 rounded border-slate-300 focus:ring-blue-500"
                           />
                           <div className="w-8 h-8 bg-slate-200 rounded-full flex items-center justify-center text-[10px] font-black uppercase">
-                            {user.username.charAt(0)}
+                            {user.username}
                           </div>
                           <span className="text-sm font-bold text-slate-700">{user.username}</span>
                         </label>
@@ -243,7 +243,7 @@ export default function WorkloadDashboard() {
                 <div className="p-6 bg-slate-50 border-b border-slate-100 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                   <div className="flex items-center gap-4">
                     <div className="w-14 h-14 bg-blue-600 rounded-2xl flex items-center justify-center text-white font-black text-xl shadow-md">
-                      {user.username.charAt(0)}
+                      {user.username}
                     </div>
                     <div>
                       <h2 className="text-xl font-black text-slate-900">{user.username}</h2>
