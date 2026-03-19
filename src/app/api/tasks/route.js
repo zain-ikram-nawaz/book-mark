@@ -25,7 +25,7 @@ function detectFakeTime(entry) {
   };
 }
 
-// Add this function to enrich task data
+// Updated function to enrich task data with list/folder info
 async function enrichTaskData(taskId, token) {
   if (!taskId) return {};
 
@@ -39,6 +39,12 @@ async function enrichTaskData(taskId, token) {
     const task = await taskRes.json();
 
     return {
+      // ✅ LIST & FOLDER INFO (from first code)
+      list: task.list ? { id: task.list.id, name: task.list.name } : null,
+      folder: task.folder ? { id: task.folder.id, name: task.folder.name } : { id: null, name: "No Folder" },
+      space: task.space ? { id: task.space.id, name: task.space.name } : null,
+
+      // Your existing enriched fields
       taskStatus: task.status?.status || "No Status",
       taskStatusColor: task.status?.color || "#808080",
       priority: task.priority?.priority || "No Priority",
@@ -351,18 +357,20 @@ export async function GET(request) {
         source: fakeCheck.source,
         deviceType: fakeCheck.deviceType,
 
-        // Basic Task Info (from time entry)
+        // Basic Task Info - ✅ NOW USING ENRICHED DATA FIRST
         taskId: entry.task?.id,
         taskName: entry.task?.name || "Unknown Task",
         taskUrl: taskUrl,
-        listId: entry.task?.list?.id,
-        listName: entry.task?.list?.name,
-        folderId: entry.task?.folder?.id,
-        folderName: entry.task?.folder?.name || "No Folder",
-        spaceId: entry.task?.space?.id,
-        spaceName: entry.task?.space?.name,
 
-        // ✅ ENRICHED TASK DATA - All the fields you wanted
+        // ✅ ENRICHED LIST/FOLDER DATA (priority over entry data)
+        listId: enrichedTask.list?.id || entry.task?.list?.id,
+        listName: enrichedTask.list?.name || entry.task?.list?.name || "No List",
+        folderId: enrichedTask.folder?.id || entry.task?.folder?.id,
+        folderName: enrichedTask.folder?.name || entry.task?.folder?.name || "No Folder",
+        spaceId: enrichedTask.space?.id || entry.task?.space?.id,
+        spaceName: enrichedTask.space?.name || entry.task?.space?.name,
+
+        // ✅ ALL ENRICHED TASK DATA
         ...enrichedTask
       };
     });
