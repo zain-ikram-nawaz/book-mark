@@ -99,14 +99,26 @@ async function enrichTaskData(taskId, token) {
 
 export async function GET(request) {
   const requestStartTime = Date.now();
-
   const authHeader = request.headers.get("Authorization");
   const token = authHeader?.split(" ")[1];
-
   const { searchParams } = new URL(request.url);
-
   const daysParam = searchParams.get("days") || "3";
-  const days = parseInt(daysParam);
+
+  // ✅ Calculate date range based on parameter
+  const now = new Date();
+  let startDate, endDate;
+
+  if (daysParam === 'this_month') {
+    startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+    endDate = now;
+  } else if (daysParam === 'last_month') {
+    startDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    endDate = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999);
+  } else {
+    const days = parseInt(daysParam) || 1;
+    startDate = new Date(now.getTime() - (days * 24 * 60 * 60 * 1000));
+    endDate = now;
+  }
 
   if (!token) {
     console.log("❌ No token provided");
@@ -114,7 +126,6 @@ export async function GET(request) {
   }
 
   try {
-
     const workspacesRes = await fetch('https://api.clickup.com/api/v2/team', {
       headers: { Authorization: `Bearer ${token}` }
     });
@@ -147,11 +158,7 @@ export async function GET(request) {
     const userData = await userRes.json();
     const currentUserId = userData.user.id;
 
-    // Calculate date range
-    const now = new Date();
-    const startDate = new Date();
-    startDate.setDate(now.getDate() - days);
-    startDate.setHours(0, 0, 0, 0);
+    // ❌ REMOVE DUPLICATE DATE CALCULATION - already done above
 
     // Fetch team members to check user role
     console.log("\n--- Fetching Team Members ---");
@@ -191,7 +198,7 @@ export async function GET(request) {
         const batchPromises = memberBatch.map(async (member) => {
           const userId = member.user.id;
           const username = member.user.username || member.user.email;
-          const apiUrl = `https://api.clickup.com/api/v2/team/${teamId}/time_entries?subtasks=true&start_date=${startDate.getTime()}&assignee=${userId}`;
+          const apiUrl = `https://api.clickup.com/api/v2/team/${teamId}/time_entries?subtasks=true&start_date=${startDate.getTime()}&end_date=${endDate.getTime()}&assignee=${userId}`;
 
           try {
             const res = await fetch(apiUrl, {
@@ -218,7 +225,7 @@ export async function GET(request) {
 
     } else {
 
-      const apiUrl1 = `https://api.clickup.com/api/v2/team/${teamId}/time_entries?assignee=${currentUserId}&start_date=${startDate.getTime()}`;
+      const apiUrl1 = `https://api.clickup.com/api/v2/team/${teamId}/time_entries?assignee=${currentUserId}&start_date=${startDate.getTime()}&end_date=${endDate.getTime()}`;
 
       try {
         const res = await fetch(apiUrl1, {
@@ -251,7 +258,7 @@ export async function GET(request) {
             // Fetch time entries from each space
             for (const space of spacesData.spaces) {
 
-              const spaceTimeUrl = `https://api.clickup.com/api/v2/team/${teamId}/time_entries?space_id=${space.id}&assignee=${currentUserId}&start_date=${startDate.getTime()}`;
+              const spaceTimeUrl = `https://api.clickup.com/api/v2/team/${teamId}/time_entries?space_id=${space.id}&assignee=${currentUserId}&start_date=${startDate.getTime()}&end_date=${endDate.getTime()}`;
 
               try {
                 const res = await fetch(spaceTimeUrl, {
@@ -288,7 +295,11 @@ export async function GET(request) {
           isGuest: isGuest,
           dateRange: {
             start: startDate.toISOString(),
-            end: now.toISOString()
+            end: endDate.toISOString(),
+            period: daysParam === 'this_month' ? 'This Month' :
+              daysParam === 'last_month' ? 'Last Month' :
+                `Last ${parseInt(daysParam)} days`,
+            daysParam: daysParam // ✅ Add this for debugging
           }
         }
       });
@@ -433,8 +444,10 @@ export async function GET(request) {
       stats: stats,
       dateRange: {
         start: startDate.toISOString(),
-        end: now.toISOString(),
-        days: days
+        end: endDate.toISOString(), // ✅ Fixed
+        period: daysParam === 'this_month' ? 'This Month' :
+          daysParam === 'last_month' ? 'Last Month' :
+            `Last ${parseInt(daysParam)} days`
       },
       meta: {
         processingTime: `${totalTime}ms`,

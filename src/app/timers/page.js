@@ -14,9 +14,10 @@ const DATE_FILTERS = [
   { value: 2, label: 'Yesterday + Today', days: 2 },
   { value: 3, label: 'Last 3 Days', days: 3 },
   { value: 7, label: 'Last Week', days: 7 },
-  { value: 30, label: 'Last Month', days: 30 },
+  // ✅ Add these new options
+  { value: 'this_month', label: 'This Month', days: 'this_month' },
+  { value: 'last_month', label: 'Last Month', days: 'last_month' },
 ];
-
 const DEVICE_FILTERS = [
   { value: 'all', label: 'All Devices' },
   { value: 'real', label: 'Real Only (Mobile + Desktop)' },
@@ -230,13 +231,20 @@ export default function SimplifiedTimerApp() {
   const [autoRefresh, setAutoRefresh] = useState(false);
   const [currentTime, setCurrentTime] = useState(Date.now());
   // console.log(allData, "data")
-
   const fetchData = useCallback(async () => {
     if (!authorizedFetch) return;
 
     setApiStatus({ loading: true, error: null });
 
-    const { ok, data, error } = await authorizedFetch(`/api/tasks?days=${selectedDays}`);
+    // ✅ Convert selectedDays to proper API parameter
+    let daysParam;
+    if (selectedDays === 'this_month' || selectedDays === 'last_month') {
+      daysParam = selectedDays; // Send as string for month filters
+    } else {
+      daysParam = selectedDays; // Send as number for day filters
+    }
+
+    const { ok, data, error } = await authorizedFetch(`/api/tasks?days=${daysParam}`);
 
     if (ok) {
       setAllData(data.data || []);
@@ -250,22 +258,12 @@ export default function SimplifiedTimerApp() {
     }
     setApiStatus(prev => ({ ...prev, loading: false }));
   }, [authorizedFetch, selectedDays]);
-
   // Initial fetch
   useEffect(() => {
     if (authorizedFetch) {
       fetchData();
     }
   }, [authorizedFetch, selectedDays, fetchData]);
-
-  // Auto-refresh
-  useEffect(() => {
-    if (!autoRefresh) return;
-    const interval = setInterval(() => {
-      fetchData();
-    }, 10000);
-    return () => clearInterval(interval);
-  }, [autoRefresh, fetchData]);
 
   // Apply filters
   useEffect(() => {
@@ -276,31 +274,49 @@ export default function SimplifiedTimerApp() {
 
     let dateFilterStart;
 
-    switch (selectedDays) {
-      case 1:
-        dateFilterStart = startOfToday.getTime();
-        break;
-      case 2:
-        dateFilterStart = new Date(startOfToday.getTime() - (24 * 60 * 60 * 1000)).getTime();
-        break;
-      case 3:
-        dateFilterStart = new Date(startOfToday.getTime() - (2 * 24 * 60 * 60 * 1000)).getTime();
-        break;
-      case 7:
-        dateFilterStart = new Date(startOfToday.getTime() - (6 * 24 * 60 * 60 * 1000)).getTime();
-        break;
-      case 30:
-        dateFilterStart = new Date(startOfToday.getTime() - (29 * 24 * 60 * 60 * 1000)).getTime();
-        break;
-      default:
-        dateFilterStart = 0;
+    // ✅ Handle month filters
+    if (selectedDays === 'this_month') {
+      // Start of current month
+      dateFilterStart = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0).getTime();
+    } else if (selectedDays === 'last_month') {
+      // Start of last month
+      const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1, 0, 0, 0, 0);
+      dateFilterStart = lastMonth.getTime();
+
+      // Also need end of last month for filtering
+      const endOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999).getTime();
+      filtered = filtered.filter(item =>
+        item.startTime >= dateFilterStart && item.startTime <= endOfLastMonth
+      );
+    } else {
+      // Handle day-based filters
+      switch (selectedDays) {
+        case 1:
+          dateFilterStart = startOfToday.getTime();
+          break;
+        case 2:
+          dateFilterStart = new Date(startOfToday.getTime() - (24 * 60 * 60 * 1000)).getTime();
+          break;
+        case 3:
+          dateFilterStart = new Date(startOfToday.getTime() - (2 * 24 * 60 * 60 * 1000)).getTime();
+          break;
+        case 7:
+          dateFilterStart = new Date(startOfToday.getTime() - (6 * 24 * 60 * 60 * 1000)).getTime();
+          break;
+        case 30:
+          dateFilterStart = new Date(startOfToday.getTime() - (29 * 24 * 60 * 60 * 1000)).getTime();
+          break;
+        default:
+          dateFilterStart = 0;
+      }
     }
 
-    if (dateFilterStart > 0) {
+    // Apply date filter (except for last_month which is already filtered above)
+    if (dateFilterStart > 0 && selectedDays !== 'last_month') {
       filtered = filtered.filter(item => item.startTime >= dateFilterStart);
     }
 
-    // ✅ Device Filter
+    // Rest of your existing filters...
     if (selectedDeviceFilter !== 'all') {
       filtered = filtered.filter(item => {
         switch (selectedDeviceFilter) {
@@ -339,7 +355,6 @@ export default function SimplifiedTimerApp() {
     }
 
     filtered.sort((a, b) => b.startTime - a.startTime);
-
     setFilteredData(filtered);
   }, [allData, selectedUsers, selectedFolders, selectedDeviceFilter, searchQuery, selectedDays]);
 
@@ -358,15 +373,6 @@ export default function SimplifiedTimerApp() {
     });
   };
 
-  // const toggleFolderSelection = (folderId) => {
-  //   setSelectedFolders(prev => {
-  //     if (prev.includes(folderId)) {
-  //       return prev.filter(id => id !== folderId);
-  //     } else {
-  //       return [...prev, folderId];
-  //     }
-  //   });
-  // };
 
   const totalFilteredTime = filteredData.reduce((sum, timer) => sum + timer.duration, 0);
   const totalActiveTime = runningTimers.reduce((sum, timer) => sum + (currentTime - timer.startTime), 0);
@@ -556,8 +562,11 @@ export default function SimplifiedTimerApp() {
             </label>
             <select
               value={selectedDays}
-              onChange={(e) => setSelectedDays(Number(e.target.value))}
-              className="w-full p-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-gray-50 hover:bg-white transition"
+              onChange={(e) => {
+                const value = e.target.value;
+                // Keep month filters as strings, convert day filters to numbers
+                setSelectedDays(value === 'this_month' || value === 'last_month' ? value : Number(value));
+              }} className="w-full p-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-gray-50 hover:bg-white transition"
             >
               {DATE_FILTERS.map(filter => (
                 <option key={filter.value} value={filter.value}>{filter.label}</option>
@@ -732,6 +741,7 @@ export default function SimplifiedTimerApp() {
         </div>
       )}
 
+
       {/* Summary */}
       <div className="bg-white rounded-2xl shadow-lg p-6 mb-6 border border-gray-100">
         <div className="flex items-center justify-between">
@@ -739,7 +749,11 @@ export default function SimplifiedTimerApp() {
             <div className="text-sm text-gray-500 font-medium">Filtered Time</div>
             <div className="text-3xl font-bold text-indigo-600">{formatDuration(totalFilteredTime)}</div>
             <div className="text-sm text-gray-600 mt-1">
-              {filteredData.length} entries • Last {selectedDays} {selectedDays === 1 ? 'day' : 'days'}
+              {filteredData.length} entries • {
+                selectedDays === 'this_month' ? 'This Month' :
+                  selectedDays === 'last_month' ? 'Last Month' :
+                    `Last ${selectedDays} ${selectedDays === 1 ? 'day' : 'days'}`
+              }
             </div>
           </div>
           {apiStatus.loading && (
