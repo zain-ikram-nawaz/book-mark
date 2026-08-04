@@ -212,7 +212,7 @@ function useAuth() {
 }
 
 export default function SimplifiedTimerApp() {
-  const { loading, error, logout, authorizedFetch } = useAuth();
+  const { accessToken, loading, error, logout, authorizedFetch } = useAuth();
 
   const [allData, setAllData] = useState([]);
   const [runningTimers, setRunningTimers] = useState([]);
@@ -232,7 +232,7 @@ export default function SimplifiedTimerApp() {
   const [currentTime, setCurrentTime] = useState(Date.now());
   // console.log(allData, "data")
   const fetchData = useCallback(async () => {
-    if (!authorizedFetch) return;
+    if (!accessToken) return;
 
     setApiStatus({ loading: true, error: null });
 
@@ -257,13 +257,13 @@ export default function SimplifiedTimerApp() {
       setApiStatus({ loading: false, error: `Failed to load data: ${error}` });
     }
     setApiStatus(prev => ({ ...prev, loading: false }));
-  }, [authorizedFetch, selectedDays]);
+  }, [accessToken, authorizedFetch, selectedDays]);
   // Initial fetch
   useEffect(() => {
-    if (authorizedFetch) {
+    if (accessToken) {
       fetchData();
     }
-  }, [authorizedFetch, selectedDays, fetchData]);
+  }, [accessToken, selectedDays, fetchData]);
 
   // Apply filters
   useEffect(() => {
@@ -562,11 +562,12 @@ export default function SimplifiedTimerApp() {
             </label>
             <select
               value={selectedDays}
+              disabled={apiStatus.loading}
               onChange={(e) => {
                 const value = e.target.value;
                 // Keep month filters as strings, convert day filters to numbers
                 setSelectedDays(value === 'this_month' || value === 'last_month' ? value : Number(value));
-              }} className="w-full p-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-gray-50 hover:bg-white transition"
+              }} className="w-full p-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-gray-50 hover:bg-white transition disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {DATE_FILTERS.map(filter => (
                 <option key={filter.value} value={filter.value}>{filter.label}</option>

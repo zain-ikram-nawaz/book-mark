@@ -1,4 +1,73 @@
 import { NextResponse } from "next/server";
+import crypto from "node:crypto";
+
+const RATE_LIMIT_RETRIES = 3;
+const RATE_LIMIT_BASE_DELAY_MS = 1200;
+const ASSIGNEE_BATCH_SIZE = 50;
+const TASK_ENRICH_BATCH_SIZE = 3;
+const TASK_ENRICH_DELAY_MS = 350;
+const TASK_CACHE_TTL_MS = 10 * 60 * 1000;
+
+const taskDetailsCache = globalThis.__clickUpTaskDetailsCache || new Map();
+globalThis.__clickUpTaskDetailsCache = taskDetailsCache;
+
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function getTokenCacheKey(token) {
+  return crypto.createHash("sha256").update(token).digest("hex").slice(0, 16);
+}
+
+function getRetryDelay(response, attempt) {
+  const retryAfter = response.headers.get("retry-after");
+  const retryAfterSeconds = Number(retryAfter);
+
+  if (Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0) {
+    return retryAfterSeconds * 1000;
+  }
+
+  return RATE_LIMIT_BASE_DELAY_MS * (attempt + 1);
+}
+
+async function clickUpFetch(url, token, options = {}) {
+  const { retries = RATE_LIMIT_RETRIES } = options;
+
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const response = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+
+    if (response.status !== 429 || attempt === retries) {
+      return response;
+    }
+
+    await sleep(getRetryDelay(response, attempt));
+  }
+}
+
+function buildTimeEntriesUrl(teamId, startDate, endDate, extraParams = {}) {
+  const params = new URLSearchParams({
+    subtasks: "true",
+    start_date: String(startDate.getTime()),
+    end_date: String(endDate.getTime()),
+    include_location_names: "true",
+    include_task_tags: "true",
+    ...extraParams
+  });
+
+  return `https://api.clickup.com/api/v2/team/${teamId}/time_entries?${params.toString()}`;
+}
+
+function chunkArray(items, size) {
+  const chunks = [];
+
+  for (let i = 0; i < items.length; i += size) {
+    chunks.push(items.slice(i, i + size));
+  }
+
+  return chunks;
+}
 
 function detectFakeTime(entry) {
   const src = (entry.source || "").toLowerCase();
@@ -28,17 +97,21 @@ function detectFakeTime(entry) {
 // Updated function to enrich task data with list/folder info
 async function enrichTaskData(taskId, token) {
   if (!taskId) return {};
+  const cacheKey = `${getTokenCacheKey(token)}:${taskId}`;
+  const cachedTask = taskDetailsCache.get(cacheKey);
+
+  if (cachedTask && cachedTask.expiresAt > Date.now()) {
+    return cachedTask.data;
+  }
 
   try {
-    const taskRes = await fetch(`https://api.clickup.com/api/v2/task/${taskId}`, {
-      headers: { Authorization: `Bearer ${token}` }
-    });
+    const taskRes = await clickUpFetch(`https://api.clickup.com/api/v2/task/${taskId}`, token);
 
     if (!taskRes.ok) return {};
 
     const task = await taskRes.json();
 
-    return {
+    const enrichedTask = {
       // ✅ LIST & FOLDER INFO (from first code)
       list: task.list ? { id: task.list.id, name: task.list.name } : null,
       folder: task.folder ? { id: task.folder.id, name: task.folder.name } : { id: null, name: "No Folder" },
@@ -91,6 +164,13 @@ async function enrichTaskData(taskId, token) {
       taskProject: task.project || null,
       taskSubtasks: task.subtasks?.length || 0
     };
+
+    taskDetailsCache.set(cacheKey, {
+      data: enrichedTask,
+      expiresAt: Date.now() + TASK_CACHE_TTL_MS
+    });
+
+    return enrichedTask;
   } catch (error) {
     console.log(`Error fetching task ${taskId}:`, error.message);
     return {};
@@ -126,9 +206,7 @@ export async function GET(request) {
   }
 
   try {
-    const workspacesRes = await fetch('https://api.clickup.com/api/v2/team', {
-      headers: { Authorization: `Bearer ${token}` }
-    });
+    const workspacesRes = await clickUpFetch('https://api.clickup.com/api/v2/team', token);
 
     if (!workspacesRes.ok) {
       const errorData = await workspacesRes.json();
@@ -151,9 +229,15 @@ export async function GET(request) {
     ) || workspacesData.teams[0];
 
     const teamId = activeWorkspace.id;
-    const userRes = await fetch('https://api.clickup.com/api/v2/user', {
-      headers: { Authorization: `Bearer ${token}` }
-    });
+    const userRes = await clickUpFetch('https://api.clickup.com/api/v2/user', token);
+
+    if (!userRes.ok) {
+      const errorData = await userRes.json();
+      return NextResponse.json({
+        error: "Failed to fetch current user",
+        details: errorData
+      }, { status: userRes.status });
+    }
 
     const userData = await userRes.json();
     const currentUserId = userData.user.id;
@@ -162,9 +246,7 @@ export async function GET(request) {
 
     // Fetch team members to check user role
     console.log("\n--- Fetching Team Members ---");
-    const membersRes = await fetch(`https://api.clickup.com/api/v2/team/${teamId}`, {
-      headers: { Authorization: `Bearer ${token}` }
-    });
+    const membersRes = await clickUpFetch(`https://api.clickup.com/api/v2/team/${teamId}`, token);
 
     if (!membersRes.ok) {
       const errorData = await membersRes.json();
@@ -190,47 +272,44 @@ export async function GET(request) {
     const allTimeEntries = [];
 
     if (isAdmin) {
-      const memberBatchSize = 10;
+      const assigneeIds = members.map(member => member.user.id).filter(Boolean);
+      const assigneeBatches = chunkArray(assigneeIds, ASSIGNEE_BATCH_SIZE);
 
-      for (let i = 0; i < members.length; i += memberBatchSize) {
-        const memberBatch = members.slice(i, i + memberBatchSize);
-
-        const batchPromises = memberBatch.map(async (member) => {
-          const userId = member.user.id;
-          const username = member.user.username || member.user.email;
-          const apiUrl = `https://api.clickup.com/api/v2/team/${teamId}/time_entries?subtasks=true&start_date=${startDate.getTime()}&end_date=${endDate.getTime()}&assignee=${userId}`;
-
-          try {
-            const res = await fetch(apiUrl, {
-              headers: { Authorization: `Bearer ${token}` }
-            });
-
-            const data = await res.json();
-
-            if (res.ok && Array.isArray(data.data)) {
-              return data.data;
-            } else {
-              console.log(`  ❌ ${username}: Failed -`, JSON.stringify(data, null, 2));
-              return [];
-            }
-          } catch (err) {
-            console.log(`  ❌ ${username}: Error -`, err.message);
-            return [];
-          }
+      for (const assigneeBatch of assigneeBatches) {
+        const apiUrl = buildTimeEntriesUrl(teamId, startDate, endDate, {
+          assignee: assigneeBatch.join(",")
         });
 
-        const batchResults = await Promise.all(batchPromises);
-        batchResults.forEach(entries => allTimeEntries.push(...entries));
+        try {
+          const res = await clickUpFetch(apiUrl, token);
+
+          const data = await res.json();
+
+          if (res.ok && Array.isArray(data.data)) {
+            allTimeEntries.push(...data.data);
+          } else {
+            console.log("  Failed to fetch batched member time entries -", JSON.stringify(data, null, 2));
+
+            if (res.status === 429) {
+              return NextResponse.json({
+                error: "ClickUp rate limit reached. Please wait a minute and try again.",
+                details: data
+              }, { status: 429 });
+            }
+          }
+        } catch (err) {
+          console.log("  Error fetching batched member time entries -", err.message);
+        }
       }
 
     } else {
 
-      const apiUrl1 = `https://api.clickup.com/api/v2/team/${teamId}/time_entries?assignee=${currentUserId}&start_date=${startDate.getTime()}&end_date=${endDate.getTime()}`;
+      const apiUrl1 = buildTimeEntriesUrl(teamId, startDate, endDate, {
+        assignee: String(currentUserId)
+      });
 
       try {
-        const res = await fetch(apiUrl1, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
+        const res = await clickUpFetch(apiUrl1, token);
 
         const data = await res.json();
 
@@ -247,9 +326,7 @@ export async function GET(request) {
       if (allTimeEntries.length === 0) {
 
         try {
-          const spacesRes = await fetch(`https://api.clickup.com/api/v2/team/${teamId}/space?archived=false`, {
-            headers: { Authorization: `Bearer ${token}` }
-          });
+          const spacesRes = await clickUpFetch(`https://api.clickup.com/api/v2/team/${teamId}/space?archived=false`, token);
 
           const spacesData = await spacesRes.json();
 
@@ -258,12 +335,13 @@ export async function GET(request) {
             // Fetch time entries from each space
             for (const space of spacesData.spaces) {
 
-              const spaceTimeUrl = `https://api.clickup.com/api/v2/team/${teamId}/time_entries?space_id=${space.id}&assignee=${currentUserId}&start_date=${startDate.getTime()}&end_date=${endDate.getTime()}`;
+              const spaceTimeUrl = buildTimeEntriesUrl(teamId, startDate, endDate, {
+                space_id: String(space.id),
+                assignee: String(currentUserId)
+              });
 
               try {
-                const res = await fetch(spaceTimeUrl, {
-                  headers: { Authorization: `Bearer ${token}` }
-                });
+                const res = await clickUpFetch(spaceTimeUrl, token);
 
                 const data = await res.json();
 
@@ -311,9 +389,9 @@ export async function GET(request) {
     // Get unique task IDs to avoid duplicate API calls
     const uniqueTaskIds = [...new Set(allTimeEntries.map(entry => entry.task?.id).filter(Boolean))];
 
-    // Batch fetch task details (10 at a time to avoid rate limits)
+    // Batch fetch task details carefully to avoid ClickUp rate limits
     const taskDetailsMap = new Map();
-    const batchSize = 10;
+    const batchSize = TASK_ENRICH_BATCH_SIZE;
 
     for (let i = 0; i < uniqueTaskIds.length; i += batchSize) {
       const taskBatch = uniqueTaskIds.slice(i, i + batchSize);
@@ -329,7 +407,7 @@ export async function GET(request) {
 
       // Small delay to respect rate limits
       if (i + batchSize < uniqueTaskIds.length) {
-        await new Promise(resolve => setTimeout(resolve, 100));
+        await sleep(TASK_ENRICH_DELAY_MS);
       }
     }
 

@@ -99,7 +99,7 @@ function useAuth() {
 }
 
 export default function RunningTimersPage() {
-  const { loading, error, logout, authorizedFetch } = useAuth();
+  const { accessToken, loading, error, logout, authorizedFetch } = useAuth();
 
   const [runningTimers, setRunningTimers] = useState([]);
   const [stats, setStats] = useState(null);
@@ -117,7 +117,7 @@ export default function RunningTimersPage() {
 
   // Fetch running timers
   const fetchRunningTimers = useCallback(async () => {
-    if (!authorizedFetch) return;
+    if (!accessToken) return;
 
     setApiStatus({ loading: true, error: null });
 
@@ -132,18 +132,18 @@ export default function RunningTimersPage() {
       setApiStatus({ loading: false, error: `Failed to load data: ${error}` });
     }
     setApiStatus(prev => ({ ...prev, loading: false }));
-  }, [authorizedFetch]);
+  }, [accessToken, authorizedFetch]);
 
   // Initial fetch
   useEffect(() => {
-    if (authorizedFetch) {
+    if (accessToken) {
       fetchRunningTimers();
     }
-  }, [authorizedFetch, fetchRunningTimers]);
+  }, [accessToken, fetchRunningTimers]);
 
   // Auto-refresh every 10 seconds
   useEffect(() => {
-    if (!autoRefresh) return;
+    if (!autoRefresh || !accessToken) return;
     const interval = setInterval(() => {
       fetchRunningTimers();
     }, 10000);

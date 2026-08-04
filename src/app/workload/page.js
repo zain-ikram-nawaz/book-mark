@@ -1,13 +1,16 @@
 'use client';
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useCallback } from 'react';
 import { Clock, Zap, Calendar,Activity, ChevronLeft, ChevronRight, RotateCcw, Search, Users, X, Filter, PlusCircle } from 'lucide-react';
 import Link from 'next/link';
 
+const ACCESS_TOKEN_KEY = 'clickup_access_token';
 
 
 export default function WorkloadDashboard() {
+  const [token, setToken] = useState(null);
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedUsers, setSelectedUsers] = useState([]);
   const [showFilters, setShowFilters] = useState(false);
@@ -24,9 +27,11 @@ export default function WorkloadDashboard() {
   const [currentViewDate, setCurrentViewDate] = useState(getMonday(new Date()));
   const formatDate = (date) => date.toISOString().split('T')[0];
 
-  const fetchWorkload = async (date) => {
+  const fetchWorkload = useCallback(async (date) => {
+    if (!token) return;
+
     setLoading(true);
-    const token = localStorage.getItem('clickup_access_token');
+    setError(null);
     const start = formatDate(date);
     const endDate = new Date(date);
     endDate.setDate(date.getDate() + 6);
@@ -37,17 +42,36 @@ export default function WorkloadDashboard() {
         headers: { Authorization: `Bearer ${token}` }
       });
       const d = await res.json();
-      setData(d.workload || []);
+
+      if (res.ok) {
+        setData(d.workload || []);
+      } else {
+        setError(d.error || 'Failed to fetch workload data');
+      }
     } catch (err) {
       console.error("Fetch Error:", err);
+      setError(err.message || 'An error occurred while fetching workload data');
     } finally {
       setLoading(false);
     }
-  };
+  }, [token]);
 
   useEffect(() => {
-    fetchWorkload(currentViewDate);
-  }, [currentViewDate]);
+    const storedToken = localStorage.getItem(ACCESS_TOKEN_KEY);
+
+    if (storedToken) {
+      setToken(storedToken);
+    } else {
+      setError("No authentication token found. Please login first.");
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (token) {
+      fetchWorkload(currentViewDate);
+    }
+  }, [token, currentViewDate, fetchWorkload]);
 
   const nextWeek = () => {
     const next = new Date(currentViewDate);
@@ -62,11 +86,11 @@ export default function WorkloadDashboard() {
   };
 
   const resetToCurrent = () => setCurrentViewDate(getMonday(new Date()));
-    const logout = () => {
-      localStorage.removeItem(ACCESS_TOKEN_KEY);
-      setAccessToken(null);
-      handleRedirectToClickUp();
-    };
+  const logout = () => {
+    localStorage.removeItem(ACCESS_TOKEN_KEY);
+    setToken(null);
+    window.location.href = '/';
+  };
 
   const formatTime = (ms) => {
     if (!ms || ms === 0) return '0h';
@@ -232,7 +256,11 @@ export default function WorkloadDashboard() {
         </div>
 
         {/* RESULTS AREA */}
-        {loading ? (
+        {error ? (
+          <div className="bg-red-50 border border-red-200 text-red-700 rounded-2xl p-6 mb-6 font-medium">
+            {error}
+          </div>
+        ) : loading ? (
           <div className="flex justify-center py-20 italic text-slate-400">Loading data...</div>
         ) : (
           <div className="space-y-8">
